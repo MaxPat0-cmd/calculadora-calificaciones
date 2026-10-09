@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Calculadora de calificaciones</title>
+  <meta name="description" content="Captura calificaciones, calcula el promedio final y exporta a Excel.">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#f5f5f7" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231d1d1f'/%3E%3Ctext x='32' y='44' font-family='system-ui,sans-serif' font-size='34' font-weight='600' text-anchor='middle' fill='white'%3E10%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="app setup-view" id="setup-view" hidden>
+    <header class="page-header">
+      <h1>Configurar grupo</h1>
+      <p class="subtitle">Selecciona el grupo que vas a calificar.</p>
+    </header>
+
+    <section class="card setup-card" id="setup-card" aria-label="Configurar grupo">
+      <div class="import-empty" id="import-empty" hidden>
+        <svg class="import-icon" aria-hidden="true" viewBox="0 0 48 48" width="44" height="44"><path d="M14 6h14l10 10v24a2 2 0 0 1-2 2H14a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Z" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/><path d="M28 6v10h10M19 26h12M19 32h12M19 20h4" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <h2>Importa las actas de las licenciaturas</h2>
+        <p>Elige el archivo .zip o los .xlsx con las actas económicas. De ahí salen los maestros, grupos y alumnos. Los archivos se leen en este navegador y no se suben a ningún lado.</p>
+        <button type="button" class="btn btn-primary" id="import-btn">Elegir archivos</button>
+        <p class="drop-hint">o arrástralos aquí</p>
+      </div>
+
+      <form id="setup-form" novalidate autocomplete="off" hidden>
+        <div class="field cb-field">
+          <label for="s-maestro">Maestro</label>
+          <input id="s-maestro" type="text" placeholder="Busca por nombre" spellcheck="false" autocomplete="off" enterkeyhint="next">
+          <ul class="cb-list" id="s-maestro-list"></ul>
+        </div>
+        <div class="field cb-field">
+          <label for="s-grupo">Grupo</label>
+          <input id="s-grupo" type="text" placeholder="Primero elige un maestro" spellcheck="false" autocomplete="off" enterkeyhint="next" disabled>
+          <ul class="cb-list" id="s-grupo-list"></ul>
+        </div>
+        <div class="field">
+          <label for="s-horas">Total de horas</label>
+          <input id="s-horas" type="text" inputmode="numeric" placeholder="Ej. 48" autocomplete="off" enterkeyhint="go" aria-describedby="e-s-horas">
+          <p class="error" id="e-s-horas"></p>
+        </div>
+
+        <dl class="setup-summary" id="setup-summary" hidden>
+          <div><dt>Maestro</dt><dd id="sum-maestro"></dd></div>
+          <div><dt>Grupo</dt><dd id="sum-grupo"></dd></div>
+          <div><dt>Asignatura</dt><dd id="sum-asignatura"></dd></div>
+          <div id="sum-carrera-row"><dt>Licenciatura</dt><dd id="sum-carrera"></dd></div>
+          <div><dt>Total de horas</dt><dd id="sum-horas"></dd></div>
+          <div><dt>Alumnos encontrados</dt><dd id="sum-alumnos"></dd></div>
+          <div id="sum-avance-row" hidden><dt>Ya calificados</dt><dd id="sum-avance"></dd></div>
+        </dl>
+
+        <button type="submit" class="btn btn-primary btn-large" id="start-btn" disabled>Comenzar captura</button>
+      </form>
+
+      <div class="import-status" id="import-status" role="status" aria-live="polite"></div>
+    </section>
+
+    <footer class="setup-footer">
+      <p class="catalog-info" id="catalog-info" hidden></p>
+      <div class="setup-links">
+        <button type="button" class="btn-text" id="reimport-btn" hidden>Actualizar archivos</button>
+        <button type="button" class="btn-text" id="free-btn">Capturar sin grupo</button>
+      </div>
+    </footer>
+    <input type="file" id="import-input" accept=".zip,.xlsx,.xls,application/zip,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" multiple hidden>
+  </main>
+
+  <main class="app capture-view" id="capture-view" hidden>
+    <header class="session-header" id="session-header" hidden>
+      <div class="session-main">
+        <p class="session-eyebrow" id="session-eyebrow"></p>
+        <h1 id="session-title"></h1>
+        <p class="session-meta" id="session-meta"></p>
+      </div>
+      <button type="button" class="btn btn-plain btn-small" id="change-group">Cambiar grupo</button>
+    </header>
+
+    <header class="page-header" id="free-header">
+      <h1>Calculadora de calificaciones</h1>
+      <p class="subtitle">Captura los parciales, las faltas y las vueltas necesarias. El promedio y la calificación final se calculan automáticamente.</p>
+      <button type="button" class="btn-text" id="choose-group">Elegir grupo</button>
+    </header>
+
+    <section class="card capture" aria-label="Captura de calificaciones">
+      <form id="capture-form" novalidate autocomplete="off">
+        <div class="edit-banner" id="edit-banner" hidden>
+          <span>Editando <strong id="edit-name"></strong></span>
+          <button type="button" class="btn-text" id="cancel-edit">Cancelar</button>
+        </div>
+
+        <div class="student-head" id="student-head" hidden>
+          <div class="student-info">
+            <p class="student-pos" id="student-pos"></p>
+            <h2 class="student-name" id="student-name"></h2>
+            <p class="student-id">Matrícula: <span id="student-id"></span></p>
+          </div>
+          <div class="student-nav">
+            <button type="button" class="nav-btn" id="prev-btn" aria-label="Alumno anterior" title="Alumno anterior (Re Pág)">
+              <svg aria-hidden="true" viewBox="0 0 20 20" width="18" height="18"><path d="m12.5 5-5 5 5 5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <button type="button" class="nav-btn" id="next-btn" aria-label="Alumno siguiente" title="Alumno siguiente (Av Pág)">
+              <svg aria-hidden="true" viewBox="0 0 20 20" width="18" height="18"><path d="m7.5 5 5 5-5 5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="identity" id="identity">
+          <div class="field field-id">
+            <label for="f-cuenta">N° de cuenta</label>
+            <input id="f-cuenta" name="cuenta" type="text" inputmode="numeric" maxlength="20"
+                   autocomplete="off" spellcheck="false" enterkeyhint="next">
+          </div>
+          <div class="field field-name">
+            <label for="f-name">Alumno <span class="optional">Opcional</span></label>
+            <input id="f-name" name="name" type="text" maxlength="80"
+                   autocomplete="off" autocapitalize="characters" spellcheck="false" enterkeyhint="next">
+          </div>
+        </div>
+
+        <div class="grades">
+          <div class="field grade">
+            <label for="f-p1">Parcial 1</label>
+            <input id="f-p1" name="p1" type="text" inputmode="decimal" enterkeyhint="next"
+                   placeholder="0 – 10" aria-describedby="e-p1" autocomplete="off">
+            <div class="np-row">
+              <button type="button" class="np-btn" data-np="p1" aria-pressed="false"
+                      title="No presentó">NP</button>
+            </div>
+            <p class="error" id="e-p1"></p>
+          </div>
+          <div class="field grade">
+            <label for="f-p2">Parcial 2</label>
+            <input id="f-p2" name="p2" type="text" inputmode="decimal" enterkeyhint="next"
+                   placeholder="0 – 10" aria-describedby="e-p2" autocomplete="off">
+            <div class="np-row">
+              <button type="button" class="np-btn" data-np="p2" aria-pressed="false"
+                      title="No presentó">NP</button>
+            </div>
+            <p class="error" id="e-p2"></p>
+          </div>
+          <div class="field grade">
+            <label for="f-pv1">Primera Vuelta</label>
+            <input id="f-pv1" name="pv1" type="text" inputmode="decimal" enterkeyhint="next"
+                   placeholder="0 – 10" aria-describedby="e-pv1" autocomplete="off">
+            <div class="np-row">
+              <button type="button" class="np-btn" data-np="pv1" aria-pressed="false"
+                      title="No presentó">NP</button>
+            </div>
+            <p class="error" id="e-pv1"></p>
+          </div>
+          <div class="field grade">
+            <label for="f-pv2">Segunda Vuelta</label>
+            <input id="f-pv2" name="pv2" type="text" inputmode="decimal" enterkeyhint="done"
+                   placeholder="0 – 10" aria-describedby="e-pv2" autocomplete="off">
+            <div class="np-row">
+              <button type="button" class="np-btn" data-np="pv2" aria-pressed="false"
+                      title="No presentó">NP</button>
+            </div>
+            <p class="error" id="e-pv2"></p>
+          </div>
+        </div>
+
+        <div class="faltas-mes" id="faltas-mes">
+          <p class="faltas-title" id="faltas-title">Faltas por mes <span class="optional">Diciembre no se registra</span></p>
+          <div class="faltas-grid" id="faltas-grid" role="group" aria-labelledby="faltas-title"></div>
+          <p class="error" id="e-faltas"></p>
+        </div>
+
+        <p class="notice" id="notice" role="status" aria-live="polite" hidden></p>
+
+        <div class="result" id="result" data-ready="false">
+          <div class="final">
+            <span class="result-label">Calificación final</span>
+            <output id="r-final" for="f-p1 f-p2 f-pv1 f-pv2" aria-live="polite">–</output>
+            <span class="badge" id="r-status" hidden></span>
+          </div>
+          <dl class="details">
+            <div>
+              <dt>Promedio parcial</dt>
+              <dd id="r-partial">–</dd>
+            </div>
+            <div>
+              <dt id="r-exact-label">Resultado exacto</dt>
+              <dd id="r-exact">–</dd>
+            </div>
+          </dl>
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-large" id="save-btn">Guardar y siguiente</button>
+        <p class="status" id="status" role="status" aria-live="polite"><span class="hint"><kbd>Enter</kbd> pasa al siguiente campo y guarda al final</span></p>
+      </form>
+    </section>
+
+    <details class="card acta" id="acta">
+      <summary>
+        <span class="acta-title">Datos del acta</span>
+        <span class="acta-summary" id="acta-summary"></span>
+        <svg class="chevron" aria-hidden="true" viewBox="0 0 20 20" width="16" height="16"><path d="m7.5 5 5 5-5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </summary>
+      <form class="acta-form" id="acta-form" novalidate autocomplete="off">
+        <p class="acta-help">Aparecen en el encabezado del Excel. Las horas totales se usan para el porcentaje de faltas. Se guardan en este navegador.</p>
+        <div class="acta-grid">
+          <div class="field"><label for="a-institucion">Institución</label><input id="a-institucion" data-acta="institucion" type="text" autocapitalize="characters"></div>
+          <div class="field"><label for="a-claveInstitucion">Clave de institución</label><input id="a-claveInstitucion" data-acta="claveInstitucion" type="text" inputmode="numeric"></div>
+          <div class="field"><label for="a-carrera">Carrera</label><input id="a-carrera" data-acta="carrera" type="text" autocapitalize="characters"></div>
+          <div class="field"><label for="a-profesor">Profesor(a)</label><input id="a-profesor" data-acta="profesor" type="text" autocapitalize="characters"></div>
+          <div class="field"><label for="a-expediente">N° de expediente</label><input id="a-expediente" data-acta="expediente" type="text" inputmode="numeric"></div>
+          <div class="field"><label for="a-horas">Horas totales de clase</label><input id="a-horas" data-acta="horas" type="text" inputmode="numeric" placeholder="Ej. 48"><p class="error" id="e-horas"></p></div>
+          <div class="field"><label for="a-asignatura">Asignatura</label><input id="a-asignatura" data-acta="asignatura" type="text" autocapitalize="characters"></div>
+          <div class="field"><label for="a-claveAsignatura">Clave de asignatura</label><input id="a-claveAsignatura" data-acta="claveAsignatura" type="text" inputmode="numeric"></div>
+          <div class="field"><label for="a-grupo">Grupo</label><input id="a-grupo" data-acta="grupo" type="text"></div>
+          <div class="field"><label for="a-ciclo">Ciclo escolar</label><input id="a-ciclo" data-acta="ciclo" type="text" placeholder="Ej. 2025/2026-2"></div>
+          <div class="field"><label for="a-semestre">Semestre</label><input id="a-semestre" data-acta="semestre" type="text" inputmode="numeric"></div>
+          <div class="field"><label for="a-nivel">Nivel</label><input id="a-nivel" data-acta="nivel" type="text" placeholder="Licenciatura"></div>
+          <div class="field"><label for="a-fechaInicio">Fecha de inicio</label><input id="a-fechaInicio" data-acta="fechaInicio" type="date"></div>
+          <div class="field"><label for="a-fechaTermino">Fecha de término</label><input id="a-fechaTermino" data-acta="fechaTermino" type="date"></div>
+          <div class="field"><label for="a-mesP1">Mes del Parcial 1</label><select id="a-mesP1" data-acta="mesP1"></select></div>
+          <div class="field"><label for="a-mesP2">Mes del Parcial 2</label><select id="a-mesP2" data-acta="mesP2"></select></div>
+        </div>
+      </form>
+    </details>
+
+    <section class="card results" aria-labelledby="count-label">
+      <div class="results-header">
+        <p class="count" id="count-label"><span id="count-text">Alumnos capturados:</span> <strong id="count">0</strong><span class="pending-count" id="pending-count" hidden></span></p>
+        <div class="toolbar">
+          <div class="segmented" role="group" aria-label="Ordenar">
+            <button type="button" data-sort="none" aria-pressed="true">Captura</button>
+            <button type="button" data-sort="name" aria-pressed="false" title="Ordenar por nombre">Nombre</button>
+            <button type="button" data-sort="grade" aria-pressed="false" title="Ordenar por calificación final">Calificación final</button>
+          </div>
+          <button type="button" class="btn btn-secondary" id="export-btn" disabled>
+            <svg aria-hidden="true" viewBox="0 0 20 20" width="16" height="16"><path d="M10 3v9m0 0-3.5-3.5M10 12l3.5-3.5M4 14.5V16a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-1.5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Exportar Excel
+          </button>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table id="table" hidden>
+          <thead>
+            <tr>
+              <th scope="col" class="c-num">#</th>
+              <th scope="col" class="c-cuenta">Matrícula</th>
+              <th scope="col" class="c-name">Alumno</th>
+              <th scope="col" class="c-n">Parcial 1</th>
+              <th scope="col" class="c-n">Parcial 2</th>
+              <th scope="col" class="c-n" title="Un decimal, como en el acta">Prom.</th>
+              <th scope="col" class="c-n">Primera Vuelta</th>
+              <th scope="col" class="c-n">Segunda Vuelta</th>
+              <th scope="col" class="c-n">Resultado exacto</th>
+              <th scope="col" class="c-n c-final">Calificación final</th>
+              <th scope="col" class="c-n c-faltas">Faltas</th>
+              <th scope="col" class="c-status">Estado</th>
+              <th scope="col" class="c-actions"><span class="visually-hidden">Acciones</span></th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+          <tfoot>
+            <tr>
+              <th scope="row" colspan="8" class="group-label" title="Promedio de los resultados exactos, antes del redondeo individual (5 para reprobados y NP). No incluye alumnos pendientes.">Promedio del grupo</th>
+              <td class="c-n group-value" id="group-avg">–</td>
+              <td colspan="4"></td>
+            </tr>
+          </tfoot>
+        </table>
+        <p class="empty" id="empty">Aún no hay alumnos. Los registros que guardes aparecerán aquí.</p>
+      </div>
+
+      <div class="results-footer" id="results-footer" hidden>
+        <button type="button" class="btn-text btn-danger" id="clear-btn">Borrar todos</button>
+      </div>
+    </section>
+  </main>
+
+  <dialog class="dialog" id="confirm-dialog" aria-labelledby="dialog-title" aria-describedby="dialog-message">
+    <form method="dialog">
+      <h2 id="dialog-title"></h2>
+      <p id="dialog-message"></p>
+      <div class="dialog-actions">
+        <button value="cancel" class="btn btn-plain" id="dialog-cancel">Cancelar</button>
+        <button value="confirm" class="btn btn-destructive" id="dialog-confirm">Eliminar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="js/grades.js"></script>
+  <script src="js/importar.js"></script>
+  <script src="js/catalogo.js"></script>
+  <script src="js/combobox.js"></script>
+  <script src="js/xlsx.js"></script>
+  <script src="js/acta.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
