@@ -75,6 +75,10 @@ Los registros se guardan en `localStorage` de este navegador, así que sobrevive
 
 El archivo de Excel es un `.xlsx` real generado sin dependencias (`js/xlsx.js`): encabezados en negritas, primera fila fija, anchos ajustados y calificaciones como números.
 
+## Publicar una versión nueva
+
+Antes de publicar, `npm run version` (o `node tools/version.js`) marca la versión: agrega `?v=<versión>` a los archivos que carga la página para que los navegadores descarguen los nuevos de inmediato (GitHub Pages los deja en caché hasta 10 minutos) y actualiza la etiqueta "Versión …" al pie de la página, con la que se comprueba qué versión se está viendo.
+
 ## Pruebas
 
 ```bash

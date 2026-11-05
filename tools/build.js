@@ -29,8 +29,8 @@ async function buildCatalog() {
 (async () => {
   const catalog = await buildCatalog();
   let html = read('index.html');
-  html = html.replace(/<link rel="stylesheet" href="styles\.css">/, () => '<style>\n' + read('styles.css') + '</style>');
-  html = html.replace(/<script src="(js\/[\w.]+)"><\/script>/g, (_, file) =>
+  html = html.replace(/<link rel="stylesheet" href="styles\.css(?:\?v=[^"]*)?">/, () => '<style>\n' + read('styles.css') + '</style>');
+  html = html.replace(/<script src="(js\/[\w.]+?\.js)(?:\?v=[^"]*)?"><\/script>/g, (_, file) =>
     '<script>\n' + read(file).replace(/<\/script/gi, '<\\/script') + '</script>');
   if (catalog) {
     const json = JSON.stringify(catalog).replace(/</g, '\\u003c');

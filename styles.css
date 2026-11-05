@@ -1822,3 +1822,12 @@ tbody .c-faltas.is-over .sub {
 .save-row #save-stay-btn {
   flex: 0 0 34%;
 }
+
+/* Versión publicada (para comprobar que se ve la última) */
+.app-version {
+  margin: 8px 0 24px;
+  color: var(--text-3);
+  font-size: 11px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
