@@ -119,3 +119,50 @@ test('ZIP: ignora __MACOSX, .xls y archivos que no son Excel', async () => {
   assert.equal(catalog.grupos.length, 0);
   assert.deepEqual(ignorados.map((i) => i.archivo).sort(), ['Vacio.xlsx', 'notas.txt', 'viejo.xls']);
 });
+
+test('acta con calificaciones ya escritas: Parcial 1 (1er mes), Parcial 2 (3er mes) y faltas', () => {
+  const rows = acta({}, [['900000001', 'ROBLES PAZ IAN JAVIER'], ['900000002', 'CASTRO GARCÍA VANIA']]);
+  // N° | Cuenta | Nombre | Agt C F | Sep C F | Oct C F | Nov C F | Dic C F
+  rows[10] = ['1', '900000001', 'ROBLES PAZ IAN JAVIER', '8.5', '2', '-', '1', '', '', '', '', '', '3'];
+  const { actas } = C.parseSheet(rows, 'prueba');
+  assert.deepEqual(actas[0].alumnos[0].notas, { p1: '8.5', m7: '2', m8: '1' }); // diciembre no cuenta
+  assert.equal(actas[0].alumnos[1].notas, undefined);
+  const cat = C.buildCatalog([{ archivo: 'A.xlsx', hojas: [{ name: 'ActaEco', rows }] }]);
+  assert.deepEqual(cat.grupos[0].calificaciones, { '900000001': { p1: '8.5', m7: '2', m8: '1' } });
+});
+
+test('Excel exportado por la app: mismo grupo que el acta original, con sus calificaciones y horas', () => {
+  const original = C.buildCatalog([{ archivo: 'A.xlsx', hojas: [{ name: 'ActaEco', rows: acta({}, [['900000001', 'UNO'], ['900000002', 'DOS']]) }] }]);
+  const info = [['Dato', 'Valor'], ['Maestro', 'PÉREZ GARCÍA JUAN'], ['N° de expediente', '05054332'], ['Grupo', '1510'],
+    ['Asignatura', 'ÉTICA'], ['Clave de asignatura', '0266'], ['Licenciatura', 'LICENCIADO EN PRUEBAS'],
+    ['Ciclo escolar', '2026/2027-1'], ['Total de horas', '48']];
+  const detalle = [
+    ['Número', 'Matrícula', 'Nombre completo', 'Parcial 1', 'Parcial 2', 'Faltas Agosto', 'Faltas Septiembre', 'Primera Vuelta', 'Estado'],
+    ['1', '900000001', 'UNO', '8.8', '', '2', '0', '', 'Falta Parcial 2'],
+    ['2', '900000002', 'DOS', 'NP', '', '0', '0', '', 'Falta Parcial 2'],
+  ];
+  const actaRows = [[], [], [], [], ['INSTITUCIÓN:', '', 'UNIV DE PRUEBA', 'CLAVE:', '', '', '8898']];
+  const exp = C.buildCatalog([{ archivo: 'Calificaciones_1510.xlsx', hojas: [
+    { name: 'Acta', rows: actaRows }, { name: 'Detalle', rows: detalle }, { name: 'Información', rows: info }] }]);
+  assert.equal(exp.grupos.length, 1);
+  assert.equal(exp.grupos[0].id, original.grupos[0].id); // se reconoce como el mismo grupo
+  assert.equal(exp.grupos[0].horas, '48');
+  assert.deepEqual(exp.grupos[0].calificaciones, { '900000001': { p1: '8.8', m7: '2' }, '900000002': { p1: 'NP' } });
+  // Al unirlo con lo ya importado no se pierden grupos y se agregan las calificaciones.
+  const otro = C.buildCatalog([{ archivo: 'B.xlsx', hojas: [{ name: 'ActaEco', rows: acta({ grupo: '3510' }, [['900000003', 'TRES']]) }] }]);
+  const base = C.mergeCatalogs(original, otro);
+  assert.equal(base.grupos.length, 2);
+  const merged = C.mergeCatalogs(base, exp);
+  assert.equal(merged.grupos.length, 2);
+  const g = merged.grupos.find((x) => x.id === original.grupos[0].id);
+  assert.equal(g.calificaciones['900000001'].p1, '8.8');
+  assert.equal(g.horas, '48');
+  assert.equal(g.institucion, 'UNIV DE PRUEBA');
+});
+
+test('Excel exportado sin maestro ni grupo (captura sin grupo) no se asocia', () => {
+  const cat = C.buildCatalog([{ archivo: 'Calificaciones.xlsx', hojas: [
+    { name: 'Detalle', rows: [['Matrícula', 'Nombre completo'], ['1', 'X']] }, { name: 'Información', rows: [['Dato', 'Valor'], ['Maestro', '']] }] }]);
+  assert.equal(cat.grupos.length, 0);
+  assert.equal(cat.archivos[0].exportado, true);
+});

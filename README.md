@@ -14,13 +14,15 @@ Para compartirla como un solo archivo: `npm run build` genera `dist/Calculadora 
 2. **Captura**: los alumnos del acta ya están cargados con nombre y matrícula (no editables). Se ve "Alumno 3 de 32"; **Guardar y siguiente** (o Enter en el último campo) pasa al siguiente y deja el cursor en Parcial 1. ‹ › o Re Pág / Av Pág cambian de alumno conservando lo escrito.
 3. **Tabla**: Matrícula, alumno y calificaciones; **Calificar/Editar** abre a ese alumno en la captura.
 4. **Exportar Excel**: `Calificaciones_<grupo>_<asignatura>_<maestro>.xlsx` con las hojas Acta, Detalle e Información (maestro, grupo, licenciatura, horas, fecha de captura).
-5. **Cambiar grupo** regresa a la pantalla inicial. Cada grupo guarda su propia sesión en el navegador; se avisa si hay cambios sin guardar o sin exportar.
+5. **Captura por partes**: basta el Parcial 1 para guardar (el alumno queda como "Falta Parcial 2") y se puede **Exportar Excel** así. **Guardar** guarda sin cambiar de alumno; **Guardar y siguiente** (o Enter) guarda y pasa al siguiente. Las vueltas se abren hasta tener los dos parciales.
+6. **Continuar con el Parcial 2**: sube ese Excel exportado (en la pantalla inicial con **Importar archivos**, o con **Cargar Excel** dentro del grupo). La app reconoce el grupo, carga el Parcial 1 y las faltas solo en los campos vacíos (nunca reemplaza lo ya capturado) y deja el cursor en el Parcial 2. Funciona aunque en esa computadora no se haya importado antes el ZIP. También se leen las calificaciones y faltas que ya vengan escritas en un acta económica (C del primer mes = Parcial 1, C del tercero = Parcial 2, F = faltas).
+7. **Cambiar grupo** regresa a la pantalla inicial. Cada grupo guarda su propia sesión en el navegador; se avisa si hay cambios sin guardar o sin exportar.
 
 **Capturar sin grupo** conserva la captura libre de antes (nombre y matrícula a mano).
 
 ### Importar las actas
 
-En la pantalla inicial se elige el `.zip` o los `.xlsx` (también arrastrándolos). Se leen en el navegador, sin dependencias ni servidor, y el catálogo queda guardado en ese navegador; **Actualizar archivos** lo reemplaza sin tocar las calificaciones ya capturadas.
+En la pantalla inicial se elige el `.zip` o los `.xlsx` (también arrastrándolos). Se leen en el navegador, sin dependencias ni servidor, y el catálogo queda guardado en ese navegador; **Importar archivos** agrega más actas o Excel exportados al catálogo sin borrar lo ya importado ni las calificaciones capturadas.
 
 Estructura de los archivos (analizada en las actas reales): cada hoja apila muchas actas. Cada acta trae `CARRERA`, `PROFESOR(A)` y `N° EXPEDIENTE`, `ASIGNATURA`, `CLAVE`, `GRUPO`, `CICLO ESCOLAR`, `FECHA DE INICIO` y la tabla `N° | N° Cuenta | Nombre Alumno | meses (C/F)`. El maestro se relaciona con el grupo por medio de la asignatura: un maestro puede tener el mismo grupo en dos materias y el mismo número de grupo existe en varias licenciaturas, así que cada opción de "Grupo" es grupo + asignatura, con la licenciatura como dato secundario.
 

@@ -27,6 +27,7 @@
   var STATUS = {};
   Object.keys(Grades.STATUS_LABELS).forEach(function (k) { STATUS[k] = Grades.STATUS_LABELS[k]; });
   STATUS.sincalificar = 'Sin calificar';
+  STATUS.parcial1 = 'Falta Parcial 2';
   var NP = Grades.NP;
 
   // ---------- Estado ----------
@@ -115,7 +116,7 @@
     var parcialOk = function (p) { return p.status === 'valid' || p.status === 'np'; };
     var gradesOk = allowUngraded
       ? emptyOrValid(p1) && emptyOrValid(p2)
-      : parcialOk(p1) && parcialOk(p2);
+      : parcialOk(p1) && emptyOrValid(p2);
     var ok = gradesOk && faltasOk && emptyOrValid(stored.vuelta(rec.pv1)) && emptyOrValid(stored.vuelta(rec.pv2)) &&
       emptyOrValid(stored.faltas(rec.f1)) && emptyOrValid(stored.faltas(rec.f2));
     return ok ? rec : null;
@@ -156,6 +157,7 @@
         pos: state.session.pos,
         modificado: state.session.modificado,
         exportado: state.session.exportado,
+        calificacionesAplicadas: state.session.calificacionesAplicadas || null,
       });
     } else {
       ok = writeJSON(FREE_KEY, { records: state.records, sort: state.sort });
@@ -194,6 +196,9 @@
     needsPv1: false, needsPv2: false, first: null, exact: null, exactText: null, sumUnits: null,
   };
 
+  // Solo Parcial 1 capturado (se exporta así y el Parcial 2 se captura después).
+  var ONLY_P1 = Object.assign({}, UNGRADED, { status: 'parcial1' });
+
   /** Registro con todos sus valores calculados (nunca se guardan; siempre se derivan). */
   function compute(record) {
     var g = {
@@ -212,7 +217,7 @@
       total += n;
     });
     var graded = isGiven(g.p1) && isGiven(g.p2);
-    var ev = evaluateGrades(g, total) || UNGRADED;
+    var ev = evaluateGrades(g, total) || (isGiven(g.p1) ? ONLY_P1 : UNGRADED);
     return {
       record: record, g: g, ev: ev, graded: graded, faltasMes: faltasMes, faltas: total,
       pct: Grades.absencePercent(total, horasTotales()),
@@ -374,6 +379,7 @@
   };
   var notice = $('notice');
   var saveBtn = $('save-btn');
+  var saveStayBtn = $('save-stay-btn');
   var statusEl = $('status');
   var statusHint = statusEl.innerHTML;
   var editBanner = $('edit-banner');
@@ -459,7 +465,8 @@
     var ev = f.ev;
 
     // Los campos de vueltas solo se habilitan cuando hacen falta.
-    setFieldEnabled('pv1', !ev || ev.needsPv1);
+    // Las vueltas se abren hasta tener los dos parciales (con solo el Parcial 1 no aplican todavía).
+    setFieldEnabled('pv1', !!(ev && ev.needsPv1));
     setFieldEnabled('pv2', !!(ev && ev.needsPv2));
     updateNpButtons();
 
@@ -550,19 +557,19 @@
     var values = {
       p1: keep(f.g.p1),
       p2: keep(f.g.p2),
-      pv1: ev ? (ev.needsPv1 ? keep(f.g.pv1) : '') : keep(f.g.pv1),
+      pv1: ev && ev.needsPv1 ? keep(f.g.pv1) : '',
       pv2: ev && ev.needsPv2 ? keep(f.g.pv2) : '',
     };
     MONTH_KEYS.forEach(function (k) { values[k] = f.g[k].status === 'valid' ? f.g[k].text : ''; });
     return values;
   }
 
-  /** Marca errores. requireGrades: Parcial 1 y 2 obligatorios. Devuelve el primer campo inválido. */
+  /** Marca errores. requireGrades: Parcial 1 obligatorio (el 2 puede quedar para después). Devuelve el primer campo inválido. */
   function validateForm(f, requireGrades) {
     var firstInvalid = null;
     INPUT_KEYS.forEach(function (k) {
       var p = f.g[k];
-      var required = requireGrades && (k === 'p1' || k === 'p2');
+      var required = requireGrades && k === 'p1';
       var bad = !inputs[k].disabled && (p.status === 'invalid' || (required && p.status === 'empty'));
       setError(k, bad ? p.error : '');
       if (bad && !firstInvalid) firstInvalid = inputs[k];
@@ -570,7 +577,7 @@
     return firstInvalid;
   }
 
-  function save() {
+  function save(stay) {
     updateResult();
     var f = readForm();
     // Con faltas rebasadas la final ya es 5: los parciales dejan de ser obligatorios.
@@ -580,7 +587,7 @@
       firstInvalid.select();
       return;
     }
-    if (state.mode === 'grupo') return saveStudent(f);
+    if (state.mode === 'grupo') return saveStudent(f, stay);
 
     var values = formValues(f);
     values.cuenta = cuentaInput.value.trim();
@@ -636,7 +643,7 @@
     return state.session ? state.records[state.session.pos] || null : null;
   }
 
-  function showStudent(index, focusKey) {
+  function showStudent(index, focusKey, keepFocus) {
     var n = state.records.length;
     if (!n) return;
     index = Math.max(0, Math.min(n - 1, index));
@@ -647,11 +654,13 @@
     $('student-id').textContent = rec.cuenta || '—';
     $('prev-btn').disabled = index === 0;
     $('next-btn').disabled = index === n - 1;
-    saveBtn.textContent = index === n - 1 ? 'Guardar' : 'Guardar y siguiente';
+    saveBtn.textContent = 'Guardar y siguiente';
     fillForm(rec);
     markCurrentRow();
     persist(false);
-    var target = inputs[focusKey || 'p1'];
+    if (keepFocus) return;
+    if (!focusKey) focusKey = isGiven(stored.vuelta(rec.p1)) && !rec.p2 ? 'p2' : 'p1';
+    var target = inputs[focusKey];
     if (target && !target.disabled) {
       target.focus({ preventScroll: true });
       target.select();
@@ -706,13 +715,21 @@
     return -1;
   }
 
-  function saveStudent(f) {
+  function saveStudent(f, stay) {
     var rec = currentStudent();
     var values = formValues(f);
     Object.keys(values).forEach(function (k) { rec[k] = values[k]; });
     persist();
     render();
     flashRow(rec.id);
+
+    if (stay) {
+      announceSaved(rec);
+      var focused = document.activeElement;
+      showStudent(state.session.pos, null, true);
+      if (focused && focused !== saveStayBtn && fieldOrder().indexOf(focused) >= 0 && isAvailable(focused)) focused.focus();
+      return;
+    }
 
     var pos = state.session.pos;
     var n = state.records.length;
@@ -751,7 +768,8 @@
     scrollToCapture();
     // Lleva el cursor a lo que falta capturar; si no falta nada, al Parcial 1.
     var ev = compute(rec).ev;
-    var target = ev.status === 'pendiente1' ? inputs.pv1 : ev.status === 'pendiente2' ? inputs.pv2 : inputs.p1;
+    var target = ev.status === 'pendiente1' ? inputs.pv1 : ev.status === 'pendiente2' ? inputs.pv2
+      : ev.status === 'parcial1' ? inputs.p2 : inputs.p1;
     target.focus({ preventScroll: true });
     target.select();
   }
@@ -807,16 +825,21 @@
     var grupo = state.mode === 'grupo';
     var graded = rows.filter(function (r) { return r.graded || r.ev.excedeFaltas; }).length;
     var pending = rows.filter(function (r) { return r.graded && isPending(r.ev); }).length;
+    var soloP1 = rows.filter(function (r) { return r.ev.status === 'parcial1'; }).length;
+    var withData = rows.filter(function (r) { return r.graded || r.ev.excedeFaltas || r.ev.status === 'parcial1' || r.faltas; }).length;
 
     countText.textContent = grupo ? 'Calificados:' : 'Alumnos capturados:';
     countEl.textContent = grupo ? graded + ' de ' + n : String(n);
-    pendingCountEl.hidden = pending === 0;
-    pendingCountEl.textContent = pending === 1 ? '1 con vuelta pendiente' : pending + ' con vuelta pendiente';
+    var extra = [];
+    if (soloP1) extra.push(soloP1 + ' solo con Parcial 1');
+    if (pending) extra.push(pending + ' con vuelta pendiente');
+    pendingCountEl.hidden = !extra.length;
+    pendingCountEl.textContent = extra.join(' · ');
     table.hidden = n === 0;
     emptyEl.hidden = n !== 0;
-    footer.hidden = grupo ? graded === 0 : n === 0;
+    footer.hidden = grupo ? withData === 0 : n === 0;
     clearBtn.textContent = grupo ? 'Borrar calificaciones del grupo' : 'Borrar todos';
-    exportBtn.disabled = grupo ? graded === 0 : n === 0;
+    exportBtn.disabled = grupo ? withData === 0 : n === 0;
     sortButtons.forEach(function (b) {
       b.setAttribute('aria-pressed', b.getAttribute('data-sort') === state.sort ? 'true' : 'false');
     });
@@ -858,7 +881,7 @@
       tr.appendChild(statusCell);
 
       var actions = cell('td', 'c-actions');
-      var editLabel = !row.graded ? 'Calificar' : isPending(ev) ? 'Capturar' : 'Editar';
+      var editLabel = ev.status === 'parcial1' ? 'Capturar' : !row.graded ? 'Calificar' : isPending(ev) ? 'Capturar' : 'Editar';
       var edit = cell('button', 'btn-text', editLabel);
       edit.type = 'button';
       edit.setAttribute('data-action', 'edit');
@@ -1059,6 +1082,8 @@
       ['Fecha de captura', nowText()],
       ['Alumnos', rows.length],
       ['Calificados', rows.filter(function (r) { return r.graded; }).length],
+      ['Con Parcial 1', rows.filter(function (r) { return isGiven(r.g.p1); }).length],
+      ['Con Parcial 2', rows.filter(function (r) { return isGiven(r.g.p2); }).length],
     ];
     if (g.archivo) data.push(['Archivo de origen', g.archivo]);
     return Xlsx.tableSheet({ name: 'Información', headers: ['Dato', 'Valor'], rows: data });
@@ -1173,6 +1198,8 @@
     $('free-header').hidden = grupo;
     studentHead.hidden = !grupo;
     identity.hidden = grupo;
+    saveStayBtn.hidden = !grupo;
+    $('load-excel-btn').hidden = !grupo;
     editBanner.hidden = true;
     state.editingId = null;
     $('acta').open = false;
@@ -1288,10 +1315,18 @@
       horas: str(state.acta.horas),
       modificado: data ? data.modificado : null,
       exportado: data ? data.exportado : null,
+      calificacionesAplicadas: data ? data.calificacionesAplicadas || null : null,
       pos: data && data.pos >= 0 && data.pos < records.length ? data.pos : 0,
     };
     buildMonthInputs();
     migrateFaltas(state.records);
+    // Calificaciones que traía el Excel importado (p. ej. un acta con Parcial 1): se cargan una vez.
+    var cargadas = null;
+    if (catalogGroup && catalogGroup.calificaciones && catalogGroup.calificacionesFecha !== state.session.calificacionesAplicadas) {
+      cargadas = applyImportedGrades(state.records, catalogGroup.calificaciones);
+      state.session.calificacionesAplicadas = catalogGroup.calificacionesFecha;
+      if (cargadas.campos) state.session.modificado = new Date().toISOString();
+    }
     persist(false);
     writeJSON(ACTIVE_KEY, id);
     writeJSON(LAST_KEY, { maestroId: state.session.grupo.maestroId, grupoId: id });
@@ -1302,8 +1337,61 @@
     setView('capture');
     var start = state.session.pos;
     if (!data || !data.modificado) start = 0;
+    if (cargadas && cargadas.campos && (!data || !data.modificado)) {
+      var pendiente = firstWithoutP2();
+      if (pendiente >= 0) start = pendiente;
+    }
     showStudent(start);
+    if (cargadas) announceImported(cargadas, catalogGroup.calificacionesArchivo);
     return true;
+  }
+
+  /**
+   * Llena con lo que traía el Excel solo los campos que están vacíos (nunca reemplaza lo capturado).
+   * notas: { matrícula: { p1, p2, pv1, pv2, m7, … } }
+   */
+  function applyImportedGrades(records, notas) {
+    var res = { alumnos: 0, campos: 0, conflictos: 0, conP1: 0 };
+    records.forEach(function (rec) {
+      var n = rec.cuenta && notas[rec.cuenta];
+      if (!n) return;
+      var tocado = false;
+      Object.keys(n).forEach(function (k) {
+        var isMonth = MONTH_KEY_RE.test(k);
+        if (!isMonth && GRADE_KEYS.indexOf(k) < 0) return;
+        var p = isMonth ? stored.faltas(n[k]) : stored.vuelta(n[k]);
+        if (p.status !== 'valid' && p.status !== 'np') return;
+        var current = str(rec[k]);
+        if (current === '') {
+          rec[k] = p.text;
+          res.campos++;
+          tocado = true;
+        } else if ((isMonth ? stored.faltas(current) : stored.vuelta(current)).text !== p.text) {
+          res.conflictos++;
+        }
+      });
+      if (tocado) res.alumnos++;
+    });
+    res.conP1 = records.filter(function (r) { return isGiven(stored.vuelta(r.p1)); }).length;
+    return res;
+  }
+
+  function firstWithoutP2() {
+    for (var i = 0; i < state.records.length; i++) {
+      var r = state.records[i];
+      if (isGiven(stored.vuelta(r.p1)) && !r.p2) return i;
+    }
+    return -1;
+  }
+
+  function announceImported(res, archivo) {
+    if (!res.campos && !res.conflictos) return;
+    var msg = res.campos
+      ? 'Se cargaron calificaciones de ' + plural(res.alumnos, 'alumno', 'alumnos') + (archivo ? ' desde ' + archivo : '') +
+        '. ' + plural(res.conP1, 'alumno tiene', 'alumnos tienen') + ' Parcial 1; captura lo que falta.'
+      : 'El Excel no traía calificaciones nuevas para este grupo.';
+    if (res.conflictos) msg += ' ' + plural(res.conflictos, 'valor distinto se dejó', 'valores distintos se dejaron') + ' como ya estaba capturado.';
+    showStatus(msg);
   }
 
   function hasUnexported() {
@@ -1450,6 +1538,7 @@
     // Cada grupo recuerda sus horas.
     var prev = selected.grupo && loadSession(selected.grupo.id);
     if (prev && prev.horas) horasInput.value = prev.horas;
+    else if (selected.grupo && selected.grupo.horas && !horasInput.value.trim()) horasInput.value = selected.grupo.horas;
     validateSetupHoras(false);
     updateSetupSummary();
     if (selected.grupo && advance) {
@@ -1493,6 +1582,9 @@
     var graded = prev ? prev.records.filter(function (r) { return compute(r).graded; }).length : 0;
     $('sum-avance-row').hidden = !graded;
     $('sum-avance').textContent = graded + ' de ' + (prev ? prev.records.length : g.alumnos.length);
+    var enArchivo = g.calificaciones ? Object.keys(g.calificaciones).filter(function (c) { return g.calificaciones[c].p1; }).length : 0;
+    $('sum-archivo-row').hidden = !enArchivo;
+    $('sum-archivo').textContent = enArchivo + ' de ' + g.alumnos.length + ' alumnos';
   }
 
   function startCapture() {
@@ -1566,13 +1658,30 @@
         appendIgnored(status, res.ignorados);
         return;
       }
-      var saved = writeJSON(CATALOG_KEY, cat);
-      setCatalog(cat);
+      // Se suma a lo que ya estaba importado: subir un solo Excel no borra los demás grupos.
+      var merged = Catalogo.mergeCatalogs(state.catalog, cat);
+      var saved = writeJSON(CATALOG_KEY, merged);
+      setCatalog(merged);
       var s = Catalogo.summary(cat);
+      // Un Excel con calificaciones (o de un solo grupo) deja ese grupo elegido para continuar.
+      var conNotas = cat.grupos.filter(function (g) { return g.calificaciones; });
+      var elegido = conNotas.length === 1 ? conNotas[0] : cat.grupos.length === 1 ? cat.grupos[0] : null;
+      if (elegido) writeJSON(LAST_KEY, { maestroId: elegido.maestroId, grupoId: elegido.id });
       showSetup();
       status.className = 'import-status is-done';
-      status.textContent = 'Listo: ' + plural(s.grupos, 'grupo', 'grupos') + ' de ' + plural(s.maestros, 'maestro', 'maestros') +
-        ' y ' + plural(s.alumnos, 'alumno', 'alumnos') + '.' +
+      var notasTxt = '';
+      if (conNotas.length) {
+        var conP1 = conNotas.reduce(function (sum, g) {
+          return sum + Object.keys(g.calificaciones).filter(function (c) { return g.calificaciones[c].p1; }).length;
+        }, 0);
+        notasTxt = ' El archivo ya trae calificaciones: ' + plural(conP1, 'alumno', 'alumnos') + ' con Parcial 1' +
+          (conNotas.length > 1 ? ' en ' + conNotas.length + ' grupos' : '') + '. Al comenzar se cargan y solo capturas lo que falta.';
+      }
+      var soloExport = cat.archivos.every(function (a) { return a.exportado || !a.actas; }) && cat.grupos.length === 1;
+      var resumen = soloExport
+        ? 'Excel del grupo ' + cat.grupos[0].grupo + ' · ' + cat.grupos[0].asignatura + ' (' + plural(s.alumnos, 'alumno', 'alumnos') + ').'
+        : plural(s.grupos, 'grupo', 'grupos') + ' de ' + plural(s.maestros, 'maestro', 'maestros') + ' y ' + plural(s.alumnos, 'alumno', 'alumnos') + '.';
+      status.textContent = 'Listo: ' + resumen + notasTxt +
         (saved ? '' : ' No se pudieron guardar en este navegador; tendrás que importarlos de nuevo al recargar.');
       appendIgnored(status, res.ignorados, cat.avisos);
     }).catch(function (err) {
@@ -1657,6 +1766,51 @@
     save();
   });
 
+  saveStayBtn.addEventListener('click', function () { save(true); });
+
+  // Cargar un Excel (exportado por la app o un acta con calificaciones) en el grupo abierto.
+  $('load-excel-btn').addEventListener('click', function () { $('load-excel-input').click(); });
+  $('load-excel-input').addEventListener('change', function () {
+    var files = Array.prototype.slice.call(this.files || []);
+    this.value = '';
+    if (!files.length || state.mode !== 'grupo') return;
+    if (!keepDraft()) return;
+    Promise.all(files.map(function (f) {
+      return f.arrayBuffer().then(function (buf) { return { name: f.name, data: new Uint8Array(buf) }; });
+    })).then(function (list) {
+      return Catalogo.importFiles(list, Importar);
+    }).then(function (res) {
+      var cat = res.catalog;
+      if (cat.grupos.length) {
+        var merged = Catalogo.mergeCatalogs(state.catalog, cat);
+        writeJSON(CATALOG_KEY, merged);
+        setCatalog(merged);
+      }
+      var mio = null;
+      cat.grupos.forEach(function (g) { if (g.id === state.session.id) mio = g; });
+      if (!mio) {
+        var otro = cat.grupos[0];
+        showStatus(otro
+          ? 'Ese Excel es de otro grupo (' + otro.grupo + ' · ' + otro.asignatura + '). Ábrelo desde Cambiar grupo.'
+          : 'No encontré calificaciones de este grupo en ese archivo.', true);
+        return;
+      }
+      if (!mio.calificaciones) {
+        showStatus('Ese Excel es de este grupo, pero no trae calificaciones.', true);
+        return;
+      }
+      var r = applyImportedGrades(state.records, mio.calificaciones);
+      state.session.calificacionesAplicadas = (groupById(mio.id) || mio).calificacionesFecha;
+      persist(r.campos > 0);
+      render();
+      showStudent(state.session.pos);
+      announceImported(r, mio.calificacionesArchivo);
+      if (!r.campos && !r.conflictos) showStatus('El Excel no traía calificaciones nuevas para este grupo.');
+    }).catch(function (err) {
+      showStatus('No se pudo leer el archivo. ' + (err && err.message ? err.message : ''), true);
+    });
+  });
+
   form.addEventListener('keydown', function (e) {
     if (e.key === 'Escape' && state.mode === 'libre' && state.editingId) {
       e.preventDefault();
@@ -1688,7 +1842,8 @@
     if (action === 'edit') {
       if (state.mode === 'grupo') {
         var ev = compute(rec).ev;
-        goTo(indexOfRecord(id), ev.status === 'pendiente1' ? 'pv1' : ev.status === 'pendiente2' ? 'pv2' : 'p1');
+        goTo(indexOfRecord(id), ev.status === 'pendiente1' ? 'pv1' : ev.status === 'pendiente2' ? 'pv2'
+          : ev.status === 'parcial1' ? 'p2' : 'p1');
         scrollToCapture();
       } else {
         startEdit(id);

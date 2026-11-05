@@ -80,14 +80,17 @@
 
   /** Columnas de la tabla: N°, cuenta/matrícula y nombre, según el texto del encabezado. */
   function tableColumns(row) {
-    var cols = { num: -1, cuenta: -1, nombre: -1, meses: [] };
+    var cols = { num: -1, cuenta: -1, nombre: -1, meses: [], mesCols: [] };
     (row || []).forEach(function (v, i) {
       var t = fold(v);
       if (!t) return;
       if (cols.cuenta < 0 && /CUENTA|MATRICULA/.test(t)) cols.cuenta = i;
       else if (cols.nombre < 0 && /NOMBRE|ALUMNO/.test(t)) cols.nombre = i;
       else if (cols.num < 0 && /^(N|NO|N°|Nº|NUM|#)\.?$/.test(t)) cols.num = i;
-      else if (MESES[t.slice(0, 3)] != null && t.length <= 10) cols.meses.push(MESES[t.slice(0, 3)]);
+      else if (MESES[t.slice(0, 3)] != null && t.length <= 10) {
+        cols.meses.push(MESES[t.slice(0, 3)]);
+        cols.mesCols.push({ mes: MESES[t.slice(0, 3)], col: i });
+      }
     });
     return cols.cuenta >= 0 && cols.nombre >= 0 ? cols : null;
   }
@@ -149,10 +152,116 @@
         acta.duplicados++;
         continue;
       }
-      acta.alumnos.push({ cuenta: cuenta, nombre: nombre });
+      var al = { cuenta: cuenta, nombre: nombre };
+      var notas = monthNotes(row, cols.mesCols);
+      if (notas) al.notas = notas;
+      acta.alumnos.push(al);
     }
     finish();
     return { actas: actas.filter(function (a) { return a.datos.profesor && a.datos.grupo; }), avisos: avisos };
+  }
+
+  function cellValue(v) {
+    var t = clean(v);
+    return t === '-' || t === '–' ? '' : t;
+  }
+
+  /**
+   * Calificaciones y faltas ya escritas en las columnas de meses (C y F) de un acta.
+   * Parcial 1 = C del primer mes; Parcial 2 = C del tercero (la misma convención de la app).
+   */
+  function monthNotes(row, mesCols) {
+    var notas = {};
+    var any = false;
+    mesCols.forEach(function (mc, i) {
+      var c = cellValue(row[mc.col]);
+      var f = cellValue(row[mc.col + 1]);
+      if (i === 0 && c) { notas.p1 = c; any = true; }
+      if (i === 2 && c) { notas.p2 = c; any = true; }
+      if (f && mc.mes !== 11) { notas['m' + mc.mes] = f; any = true; }
+    });
+    return any ? notas : null;
+  }
+
+  /** Hojas "Información" + "Detalle" (+ "Acta"): un Excel exportado por esta app. */
+  function isAppExport(hojas) {
+    var names = hojas.map(function (h) { return fold(h.name); });
+    return names.indexOf('DETALLE') >= 0 && names.indexOf('INFORMACION') >= 0;
+  }
+
+  function sheetNamed(hojas, name) {
+    for (var i = 0; i < hojas.length; i++) if (fold(hojas[i].name) === name) return hojas[i];
+    return null;
+  }
+
+  /** Lee un Excel exportado por la app como un acta con calificaciones. null si no indica maestro y grupo. */
+  function parseExport(hojas) {
+    var info = {};
+    (sheetNamed(hojas, 'INFORMACION').rows || []).forEach(function (r) {
+      if (r && clean(r[0])) info[fold(r[0])] = clean(r[1]);
+    });
+    var datos = {
+      profesor: info['MAESTRO'] || '',
+      expediente: info['N° DE EXPEDIENTE'] || info['NO. DE EXPEDIENTE'] || '',
+      grupo: info['GRUPO'] || '',
+      asignatura: info['ASIGNATURA'] || '',
+      claveAsignatura: info['CLAVE DE ASIGNATURA'] || '',
+      carrera: info['LICENCIATURA'] || '',
+      ciclo: info['CICLO ESCOLAR'] || '',
+    };
+    // Institución, su clave y la fecha de inicio vienen en el encabezado de la hoja Acta.
+    var acta = sheetNamed(hojas, 'ACTA');
+    if (acta) {
+      var claves = [];
+      acta.rows.slice(0, 9).forEach(function (row) {
+        headerFields(rowText(row)).forEach(function (f) {
+          if (f[0] === 'clave') claves.push(f[1]);
+          else if (f[0] === 'institucion' || f[0] === 'fechaInicio') datos[f[0]] = datos[f[0]] || f[1];
+        });
+      });
+      datos.claveInstitucion = claves[0] || '';
+      if (!datos.claveAsignatura) datos.claveAsignatura = claves[1] || '';
+    }
+    if (!datos.profesor || !datos.grupo) return null;
+
+    var rows = sheetNamed(hojas, 'DETALLE').rows;
+    var head = (rows[0] || []).map(fold);
+    var col = function (re) {
+      for (var i = 0; i < head.length; i++) if (re.test(head[i])) return i;
+      return -1;
+    };
+    var cCuenta = col(/^(MATRICULA|N° DE CUENTA|CUENTA)$/);
+    var cNombre = col(/^(NOMBRE COMPLETO|ALUMNO)$/);
+    var cols = { p1: col(/^PARCIAL 1$/), p2: col(/^PARCIAL 2$/), pv1: col(/^PRIMERA VUELTA$/), pv2: col(/^SEGUNDA VUELTA$/) };
+    var meses = [];
+    head.forEach(function (h, i) {
+      var m = /^FALTAS (\S+)$/.exec(h);
+      var mes = m && MESES[m[1].slice(0, 3)];
+      if (mes != null) {
+        cols['m' + mes] = i;
+        meses.push(mes);
+      }
+    });
+    if (cCuenta < 0 || cNombre < 0) return null;
+    var alumnos = [];
+    var vistos = {};
+    rows.slice(1).forEach(function (r) {
+      var cuenta = clean(r && r[cCuenta]);
+      var nombre = clean(r && r[cNombre]);
+      if (!cuenta || !nombre || vistos[cuenta]) return;
+      vistos[cuenta] = true;
+      var notas = {};
+      var any = false;
+      Object.keys(cols).forEach(function (k) {
+        var v = cols[k] >= 0 ? cellValue(r[cols[k]]) : '';
+        if (v && !(k[0] === 'm' && v === '0')) { notas[k] = v; any = true; }
+      });
+      var al = { cuenta: cuenta, nombre: nombre };
+      if (any) al.notas = notas;
+      alumnos.push(al);
+    });
+    var horas = /^\d{1,4}$/.test(info['TOTAL DE HORAS'] || '') ? info['TOTAL DE HORAS'] : '';
+    return { datos: datos, alumnos: alumnos, duplicados: 0, meses: meses, horas: horas };
   }
 
   function hash(s) {
@@ -174,16 +283,25 @@
     var archivos = [];
     var avisos = [];
 
+    var stamp = new Date().toISOString();
     libros.forEach(function (libro) {
       var total = 0;
       var ignoradas = [];
-      libro.hojas.forEach(function (hoja) {
-        var res = parseSheet(hoja.rows, libro.archivo + ' › ' + hoja.name);
+      var exportado = isAppExport(libro.hojas);
+      var lotes = [];
+      if (exportado) {
+        var ex = parseExport(libro.hojas);
+        if (ex) lotes.push({ actas: [ex], avisos: [] });
+        else avisos.push(libro.archivo + ': es un Excel de esta app sin maestro y grupo (captura sin grupo); no se puede asociar a un grupo.');
+      } else {
+        libro.hojas.forEach(function (hoja) {
+          var res = parseSheet(hoja.rows, libro.archivo + ' › ' + hoja.name);
+          if (!res.actas.length && hoja.rows.some(function (r) { return rowText(r); })) ignoradas.push(hoja.name);
+          lotes.push(res);
+        });
+      }
+      lotes.forEach(function (res) {
         avisos = avisos.concat(res.avisos);
-        if (!res.actas.length) {
-          if (hoja.rows.some(function (r) { return rowText(r); })) ignoradas.push(hoja.name);
-          return;
-        }
         res.actas.forEach(function (a) {
           var d = a.datos;
           var profesor = clean(d.profesor);
@@ -195,6 +313,7 @@
             a.alumnos.forEach(function (al) {
               if (grupos[id].alumnos.indexOf(al.cuenta) < 0) grupos[id].alumnos.push(al.cuenta);
             });
+            if (a.horas && !grupos[id].horas) grupos[id].horas = a.horas;
           } else {
             grupos[id] = {
               id: id,
@@ -213,7 +332,17 @@
               archivo: libro.archivo,
               alumnos: a.alumnos.map(function (al) { return al.cuenta; }),
             };
+            if (a.horas) grupos[id].horas = a.horas;
           }
+          // Calificaciones que ya traía el archivo (Parcial 1, faltas…), para no capturarlas de nuevo.
+          a.alumnos.forEach(function (al) {
+            if (!al.notas) return;
+            var g = grupos[id];
+            g.calificaciones = g.calificaciones || {};
+            g.calificaciones[al.cuenta] = Object.assign({}, g.calificaciones[al.cuenta] || {}, al.notas);
+            g.calificacionesFecha = stamp;
+            g.calificacionesArchivo = libro.archivo;
+          });
           if (a.duplicados) avisos.push(libro.archivo + ': ' + a.duplicados + ' alumno(s) repetido(s) en el grupo ' + d.grupo + ' (' + d.asignatura + ') se contaron una sola vez.');
           a.alumnos.forEach(function (al) {
             if (alumnos[al.cuenta] && alumnos[al.cuenta] !== al.nombre) {
@@ -225,17 +354,57 @@
           total++;
         });
       });
-      archivos.push({ archivo: libro.archivo, actas: total, hojasIgnoradas: ignoradas });
+      archivos.push({ archivo: libro.archivo, actas: total, hojasIgnoradas: ignoradas, exportado: exportado });
     });
 
     var lista = Object.keys(grupos).map(function (k) { return grupos[k]; });
     return {
       version: 1,
-      importado: new Date().toISOString(),
+      importado: stamp,
       archivos: archivos,
       avisos: avisos,
       grupos: lista,
       alumnos: alumnos,
+    };
+  }
+
+  /**
+   * Une un catálogo recién importado con el que ya había: los grupos nuevos se agregan, los que ya
+   * existían se actualizan (alumnos sin repetir, calificaciones del archivo más reciente) y nada se pierde.
+   */
+  function mergeCatalogs(base, nuevo) {
+    if (!base || !base.grupos) return nuevo;
+    var byId = {};
+    var lista = base.grupos.map(function (g) {
+      var copy = Object.assign({}, g, { alumnos: g.alumnos.slice() });
+      byId[g.id] = copy;
+      return copy;
+    });
+    nuevo.grupos.forEach(function (g) {
+      var old = byId[g.id];
+      if (!old) {
+        lista.push(g);
+        return;
+      }
+      g.alumnos.forEach(function (c) { if (old.alumnos.indexOf(c) < 0) old.alumnos.push(c); });
+      ['institucion', 'claveInstitucion', 'fechaInicio', 'horas'].forEach(function (k) { if (g[k]) old[k] = g[k]; });
+      if (g.meses && g.meses.length && !(old.meses && old.meses.length)) old.meses = g.meses;
+      if (g.calificaciones) {
+        old.calificaciones = Object.assign({}, old.calificaciones || {}, g.calificaciones);
+        old.calificacionesFecha = g.calificacionesFecha;
+        old.calificacionesArchivo = g.calificacionesArchivo;
+      }
+    });
+    var archivos = base.archivos.filter(function (a) {
+      return !nuevo.archivos.some(function (n) { return n.archivo === a.archivo; });
+    }).concat(nuevo.archivos);
+    return {
+      version: 1,
+      importado: nuevo.importado,
+      archivos: archivos,
+      avisos: nuevo.avisos,
+      grupos: lista,
+      alumnos: Object.assign({}, base.alumnos, nuevo.alumnos),
     };
   }
 
@@ -304,7 +473,12 @@
         libros = libros.filter(Boolean);
         var catalog = buildCatalog(libros);
         catalog.archivos.forEach(function (a) {
-          if (!a.actas) ignorados.push({ archivo: a.archivo, motivo: 'no contiene actas económicas con alumnos' });
+          if (!a.actas) {
+            ignorados.push({
+              archivo: a.archivo,
+              motivo: a.exportado ? 'Excel de esta app sin maestro ni grupo' : 'no contiene actas económicas con alumnos',
+            });
+          }
           else if (a.hojasIgnoradas.length) {
             ignorados.push({ archivo: a.archivo + ' › ' + a.hojasIgnoradas.join(', '), motivo: 'hoja sin maestro ni grupo' });
           }
@@ -317,6 +491,7 @@
   var api = {
     parseSheet: parseSheet,
     buildCatalog: buildCatalog,
+    mergeCatalogs: mergeCatalogs,
     importFiles: importFiles,
     teachers: teachers,
     summary: summary,

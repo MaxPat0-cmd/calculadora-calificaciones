@@ -1808,3 +1808,17 @@ tbody .c-faltas.is-over .sub {
   color: var(--danger);
   font-weight: 600;
 }
+
+/* Guardar (sin avanzar) junto a Guardar y siguiente */
+.save-row {
+  display: flex;
+  gap: 10px;
+}
+
+.save-row .btn-large {
+  flex: 1 1 auto;
+}
+
+.save-row #save-stay-btn {
+  flex: 0 0 34%;
+}
