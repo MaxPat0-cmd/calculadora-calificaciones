@@ -18,7 +18,7 @@ Para compartirla como un solo archivo: `npm run build` genera `dist/Calculadora 
 6. **Continuar con el Parcial 2**: sube ese Excel exportado (en la pantalla inicial con **Importar archivos**, o con **Cargar Excel** dentro del grupo). La app reconoce el grupo, carga el Parcial 1 y las faltas solo en los campos vacíos (nunca reemplaza lo ya capturado) y deja el cursor en el Parcial 2. Funciona aunque en esa computadora no se haya importado antes el ZIP. También se leen las calificaciones y faltas que ya vengan escritas en un acta económica (C del primer mes = Parcial 1, C del tercero = Parcial 2, F = faltas).
 7. **Cambiar grupo** regresa a la pantalla inicial. Cada grupo guarda su propia sesión en el navegador; se avisa si hay cambios sin guardar o sin exportar.
 
-**Capturar sin grupo** conserva la captura libre de antes (nombre y matrícula a mano).
+La app siempre abre en **Configurar grupo**; solo retoma directo la captura de un grupo que quedó a medias. **Capturar sin grupo** conserva la captura libre de antes (nombre y matrícula a mano) y muestra cuántos alumnos tiene guardados.
 
 **Empezar de cero** (pantalla inicial) borra todo lo que la app guardó en ese navegador: actas importadas, calificaciones de cada grupo y la captura sin grupo. Pide confirmación; conviene exportar antes lo que se quiera conservar.
 

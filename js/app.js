@@ -1613,6 +1613,9 @@
 
   function showSetup() {
     state.mode = null;
+    var free = readJSON(FREE_KEY);
+    var freeN = free && Array.isArray(free.records) ? free.records.length : 0;
+    $('free-btn').textContent = freeN ? 'Capturar sin grupo (' + plural(freeN, 'alumno guardado', 'alumnos guardados') + ')' : 'Capturar sin grupo';
     renderCatalogInfo();
     setView('setup');
     selected.maestro = null;
@@ -1989,15 +1992,10 @@
   initSetup();
 
   (function boot() {
+    // Siempre se abre en "Configurar grupo"; solo se retoma directo la captura de un grupo a medias.
+    // Lo capturado sin grupo sigue guardado y se abre con "Capturar sin grupo".
     var active = readJSON(ACTIVE_KEY);
-    if (active === 'libre') return enterFree();
-    if (active === 'setup') return showSetup();
-    if (active && enterGroup(active, groupById(active), null)) return;
-    // Quien ya capturaba sin grupo (versiones anteriores) sigue viendo sus datos.
-    if (!active) {
-      var free = readJSON(FREE_KEY);
-      if (free && Array.isArray(free.records) && free.records.length) return enterFree();
-    }
+    if (active && active !== 'libre' && active !== 'setup' && enterGroup(active, groupById(active), null)) return;
     showSetup();
   })();
 })();
