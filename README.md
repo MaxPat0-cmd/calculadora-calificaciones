@@ -20,6 +20,8 @@ Para compartirla como un solo archivo: `npm run build` genera `dist/Calculadora 
 
 **Capturar sin grupo** conserva la captura libre de antes (nombre y matrícula a mano).
 
+**Empezar de cero** (pantalla inicial) borra todo lo que la app guardó en ese navegador: actas importadas, calificaciones de cada grupo y la captura sin grupo. Pide confirmación; conviene exportar antes lo que se quiera conservar.
+
 ### Importar las actas
 
 En la pantalla inicial se elige el `.zip` o los `.xlsx` (también arrastrándolos). Se leen en el navegador, sin dependencias ni servidor, y el catálogo queda guardado en ese navegador; **Importar archivos** agrega más actas o Excel exportados al catálogo sin borrar lo ya importado ni las calificaciones capturadas.

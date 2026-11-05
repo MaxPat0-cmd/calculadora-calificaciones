@@ -1530,6 +1530,7 @@
       if (files.length) importFiles(files);
     });
     $('free-btn').addEventListener('click', enterFree);
+    $('reset-btn').addEventListener('click', resetAll);
   }
 
   function selectGroup(o, advance) {
@@ -1640,6 +1641,54 @@
     var focusEl = !selected.maestro ? $('s-maestro') : !selected.grupo ? $('s-grupo') : setupHoras() ? $('start-btn') : $('s-horas');
     if (!$('setup-form').hidden) focusEl.focus({ preventScroll: true });
     else $('import-btn').focus({ preventScroll: true });
+  }
+
+  /** Llaves que esta app guarda en el navegador (todas empiezan con "calificaciones."). */
+  function storedKeys() {
+    var keys = [];
+    try {
+      for (var i = 0; i < localStorage.length; i++) {
+        var k = localStorage.key(i);
+        if (k && k.indexOf('calificaciones.') === 0) keys.push(k);
+      }
+    } catch (e) { /* sin acceso al almacenamiento */ }
+    return keys;
+  }
+
+  /** Borra actas importadas, sesiones de grupos y captura libre de este navegador. */
+  function resetAll() {
+    var keys = storedKeys();
+    var sesiones = keys.filter(function (k) {
+      if (k.indexOf(SESSION_PREFIX) !== 0) return false;
+      var d = readJSON(k);
+      return d && Array.isArray(d.records) && d.records.some(function (r) { return r.p1 || r.p2; });
+    }).length;
+    var libre = readJSON(FREE_KEY);
+    var libreN = libre && Array.isArray(libre.records) ? libre.records.length : 0;
+    var partes = [];
+    if (state.catalog && state.catalog.grupos.length && !window.CATALOGO_INCLUIDO) partes.push('las actas importadas (' + plural(state.catalog.grupos.length, 'grupo', 'grupos') + ')');
+    if (sesiones) partes.push('las calificaciones de ' + plural(sesiones, 'grupo', 'grupos'));
+    if (libreN) partes.push(plural(libreN, 'alumno', 'alumnos') + ' de la captura sin grupo');
+    var lista = partes.length > 1 ? partes.slice(0, -1).join(', ') + ' y ' + partes[partes.length - 1] : partes[0];
+    var detalle = partes.length ? 'Se borrarán ' + lista + '. ' : '';
+    confirmAction('¿Empezar de cero en este navegador?',
+      detalle + 'Exporta a Excel lo que quieras conservar antes de continuar. Esta acción no se puede deshacer.',
+      'Borrar todo'
+    ).then(function (ok) {
+      if (!ok) return;
+      keys.forEach(function (k) {
+        try { localStorage.removeItem(k); } catch (e) { /* nada que borrar */ }
+      });
+      state.records = [];
+      state.session = null;
+      state.editingId = null;
+      setCatalog(window.CATALOGO_INCLUIDO || null);
+      var status = $('import-status');
+      status.className = 'import-status is-done';
+      status.textContent = 'Listo: se borró todo lo guardado en este navegador.' +
+        (window.CATALOGO_INCLUIDO ? ' Los grupos incluidos en este archivo siguen disponibles.' : ' Importa las actas para comenzar.');
+      showSetup();
+    });
   }
 
   function importFiles(fileList) {

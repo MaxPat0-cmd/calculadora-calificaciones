@@ -9,7 +9,7 @@
   <meta name="theme-color" content="#f5f5f7" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231d1d1f'/%3E%3Ctext x='32' y='44' font-family='system-ui,sans-serif' font-size='34' font-weight='600' text-anchor='middle' fill='white'%3E10%3C/text%3E%3C/svg%3E">
-  <link rel="stylesheet" href="styles.css?v=2026.11.05-2002">
+  <link rel="stylesheet" href="styles.css?v=2026.11.05-2007">
 </head>
 <body>
   <main class="app setup-view" id="setup-view" hidden>
@@ -66,6 +66,7 @@
       <div class="setup-links">
         <button type="button" class="btn-text" id="reimport-btn" hidden title="Agrega actas o un Excel exportado con Parcial 1; no borra lo ya importado">Importar archivos</button>
         <button type="button" class="btn-text" id="free-btn">Capturar sin grupo</button>
+        <button type="button" class="btn-text btn-danger" id="reset-btn" title="Borra las actas importadas y todas las calificaciones guardadas en este navegador">Empezar de cero</button>
       </div>
     </footer>
     <input type="file" id="import-input" accept=".zip,.xlsx,.xls,application/zip,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" multiple hidden>
@@ -295,14 +296,14 @@
     </form>
   </dialog>
 
-  <p class="app-version" id="app-version">Versión 2026.11.05-2002</p>
+  <p class="app-version" id="app-version">Versión 2026.11.05-2007</p>
 
-  <script src="js/grades.js?v=2026.11.05-2002"></script>
-  <script src="js/importar.js?v=2026.11.05-2002"></script>
-  <script src="js/catalogo.js?v=2026.11.05-2002"></script>
-  <script src="js/combobox.js?v=2026.11.05-2002"></script>
-  <script src="js/xlsx.js?v=2026.11.05-2002"></script>
-  <script src="js/acta.js?v=2026.11.05-2002"></script>
-  <script src="js/app.js?v=2026.11.05-2002"></script>
+  <script src="js/grades.js?v=2026.11.05-2007"></script>
+  <script src="js/importar.js?v=2026.11.05-2007"></script>
+  <script src="js/catalogo.js?v=2026.11.05-2007"></script>
+  <script src="js/combobox.js?v=2026.11.05-2007"></script>
+  <script src="js/xlsx.js?v=2026.11.05-2007"></script>
+  <script src="js/acta.js?v=2026.11.05-2007"></script>
+  <script src="js/app.js?v=2026.11.05-2007"></script>
 </body>
 </html>
