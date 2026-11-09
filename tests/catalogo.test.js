@@ -120,15 +120,32 @@ test('ZIP: ignora __MACOSX, .xls y archivos que no son Excel', async () => {
   assert.deepEqual(ignorados.map((i) => i.archivo).sort(), ['Vacio.xlsx', 'notas.txt', 'viejo.xls']);
 });
 
-test('acta con calificaciones ya escritas: Parcial 1 (1er mes), Parcial 2 (3er mes) y faltas', () => {
+test('acta con calificaciones ya escritas: Parcial 1 en septiembre y Parcial 2 en noviembre (no Enfermería)', () => {
   const rows = acta({}, [['900000001', 'ROBLES PAZ IAN JAVIER'], ['900000002', 'CASTRO GARCÍA VANIA']]);
   // N° | Cuenta | Nombre | Agt C F | Sep C F | Oct C F | Nov C F | Dic C F
-  rows[10] = ['1', '900000001', 'ROBLES PAZ IAN JAVIER', '8.5', '2', '-', '1', '', '', '', '', '', '3'];
+  rows[10] = ['1', '900000001', 'ROBLES PAZ IAN JAVIER', '', '2', '8.5', '1', '', '', '9', '', '', '3'];
   const { actas } = C.parseSheet(rows, 'prueba');
-  assert.deepEqual(actas[0].alumnos[0].notas, { p1: '8.5', m7: '2', m8: '1' }); // diciembre no cuenta
+  assert.deepEqual(actas[0].alumnos[0].notas, { p1: '8.5', p2: '9', m7: '2', m8: '1' }); // diciembre no cuenta
   assert.equal(actas[0].alumnos[1].notas, undefined);
   const cat = C.buildCatalog([{ archivo: 'A.xlsx', hojas: [{ name: 'ActaEco', rows }] }]);
-  assert.deepEqual(cat.grupos[0].calificaciones, { '900000001': { p1: '8.5', m7: '2', m8: '1' } });
+  assert.deepEqual(cat.grupos[0].calificaciones, { '900000001': { p1: '8.5', p2: '9', m7: '2', m8: '1' } });
+});
+
+test('acta de Enfermería con calificaciones: Parcial 1 en el 1er mes y Parcial 2 en el 3ro', () => {
+  const rows = acta({ carrera: 'LICENCIATURA EN ENFERMERÍA' }, [['900000001', 'ROBLES PAZ IAN JAVIER']]);
+  rows[10] = ['1', '900000001', 'ROBLES PAZ IAN JAVIER', '8.5', '', '7', '', '9', '', '6', '', '', ''];
+  const { actas } = C.parseSheet(rows, 'prueba');
+  assert.deepEqual(actas[0].alumnos[0].notas, { p1: '8.5', p2: '9' });
+});
+
+test('meses de los parciales por licenciatura', () => {
+  const ago = [7, 8, 9, 10, 11];
+  assert.deepEqual(C.partialMonths('LICENCIADO EN DERECHO (CU)', ago), { p1: 8, p2: 10 }); // Sep y Nov
+  assert.deepEqual(C.partialMonths('CCH', ago), { p1: 8, p2: 10 });
+  assert.deepEqual(C.partialMonths('LICENCIATURA EN ENFERMERÍA', ago), { p1: 7, p2: 9 }); // Ago y Oct
+  assert.deepEqual(C.partialMonths('Lic. Enfermeria', [1, 2, 3, 4, 5]), { p1: 1, p2: 3 }); // Feb y Abr
+  // Semestre sin septiembre/noviembre: segundo y cuarto mes del acta
+  assert.deepEqual(C.partialMonths('LICENCIADO EN PSICOLOGÍA', [1, 2, 3, 4, 5]), { p1: 2, p2: 4 });
 });
 
 test('Excel exportado por la app: mismo grupo que el acta original, con sus calificaciones y horas', () => {

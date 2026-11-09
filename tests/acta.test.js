@@ -59,3 +59,28 @@ test('faltas por mes: diciembre no se registra', () => {
   assert.deepEqual(faltasMonths(7, 9), [7, 8, 9, 10]); // Ago–Nov
   assert.deepEqual(faltasMonths(1, 3), [1, 2, 3, 4, 5]); // Feb–Jun
 });
+
+test('columnas del acta desde su primer mes aunque el Parcial 1 sea después', () => {
+  const { monthColumns, faltasMonths } = require('../js/acta.js');
+  assert.deepEqual(monthColumns(8, 10, 7), { months: ['Ago', 'Sep', 'Oct', 'Nov', 'Dic'], indexes: [7, 8, 9, 10, 11], p1: 1, p2: 3 });
+  assert.deepEqual(monthColumns(7, 9, 7), { months: ['Ago', 'Sep', 'Oct', 'Nov', 'Dic'], indexes: [7, 8, 9, 10, 11], p1: 0, p2: 2 });
+  assert.deepEqual(faltasMonths(8, 10, 7), [7, 8, 9, 10]);
+  assert.deepEqual(monthColumns(8, 10), { months: ['Sep', 'Oct', 'Nov', 'Dic', 'Ene'], indexes: [8, 9, 10, 11, 0], p1: 0, p2: 2 }); // sin primer mes: como antes
+});
+
+test('acta exportada: Parcial 1 en Sep y Parcial 2 en Nov', { skip: !hasPython() && 'sin python3/openpyxl' }, () => {
+  const rows = [{ numero: 1, cuenta: '900000006', nombre: 'ALVAREZ SOTO ANA', p1: 8, p2: 9, faltasMes: { 7: 1, 10: 2 },
+    prom: 8.5, pv1: '', pv2: '', totalFaltas: 3, pctFaltas: 0.063, final: 9, detalle: [1] }];
+  const bytes = buildActa({ mesInicio: 7, mesP1: 8, mesP2: 10, horas: '48' }, rows, ['N'], []);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'acta-mes-'));
+  const file = path.join(dir, 'acta.xlsx');
+  fs.writeFileSync(file, bytes);
+  const out = JSON.parse(execFileSync('python3', ['-I', '-c', `
+import json, sys, openpyxl
+ws = openpyxl.load_workbook(sys.argv[1])['Acta']
+print(json.dumps({"head": [ws.cell(9, c).value for c in range(4, 14)], "row": [ws.cell(11, c).value for c in range(4, 14)]}))
+`, file]).toString());
+  assert.deepEqual(out.head, ['Ago', null, 'Sep', null, 'Oct', null, 'Nov', null, 'Dic', null]);
+  // Ago: - / 1 · Sep: 8 / 0 · Oct: - / 0 · Nov: 9 / 2 · Dic: - / -
+  assert.deepEqual(out.row, ['-', 1, 8, 0, '-', 0, 9, 2, '-', '-']);
+});

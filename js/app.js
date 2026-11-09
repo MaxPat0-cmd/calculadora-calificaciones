@@ -124,7 +124,7 @@
 
   /** Faltas guardadas por parcial (versión anterior) → al mes de cada parcial según el acta. */
   function migrateFaltas(records) {
-    var mc = Acta.monthColumns(state.acta.mesP1, state.acta.mesP2);
+    var mc = Acta.monthColumns(state.acta.mesP1, state.acta.mesP2, state.acta.mesInicio);
     var changed = false;
     records.forEach(function (r) {
       [['f1', mc.p1], ['f2', mc.p2]].forEach(function (pair) {
@@ -326,7 +326,7 @@
   }
 
   function currentMonths() {
-    return Acta.faltasMonths(state.acta.mesP1, state.acta.mesP2);
+    return Acta.faltasMonths(state.acta.mesP1, state.acta.mesP2, state.acta.mesInicio);
   }
 
   /** Casillas de faltas para los meses del acta (sin diciembre). Conserva lo ya escrito. */
@@ -1242,6 +1242,7 @@
   /** Datos del encabezado del acta a partir del grupo importado. */
   function actaFromGroup(g, horas) {
     var meses = g.meses && g.meses.length ? g.meses : [1, 2, 3, 4, 5];
+    var pm = Catalogo.partialMonths(g.carrera, meses);
     return {
       institucion: g.institucion || '',
       claveInstitucion: g.claveInstitucion || '',
@@ -1257,9 +1258,28 @@
       nivel: '',
       fechaInicio: isoDate(g.fechaInicio),
       fechaTermino: '',
-      mesP1: String(meses[0]),
-      mesP2: String(meses[Math.min(2, meses.length - 1)]),
+      mesInicio: String(meses[0]),
+      mesP1: String(pm.p1),
+      mesP2: String(pm.p2),
+      reglaMeses: 2,
     };
+  }
+
+  /**
+   * Grupos que ya se capturaban antes de la regla de meses por licenciatura:
+   * conserva las columnas del acta (empiezan en el primer mes) y mueve los parciales a su mes.
+   */
+  function applyMonthRule(acta, carrera, meses) {
+    if (acta.reglaMeses) return false;
+    if (!meses || !meses.length) {
+      meses = Acta.monthColumns(acta.mesP1, acta.mesP2, acta.mesInicio).indexes;
+    }
+    var pm = Catalogo.partialMonths(carrera, meses);
+    acta.mesInicio = String(meses[0]);
+    acta.mesP1 = String(pm.p1);
+    acta.mesP2 = String(pm.p2);
+    acta.reglaMeses = 2;
+    return true;
   }
 
   function groupSnapshot(g) {
@@ -1308,6 +1328,7 @@
     state.records = records;
     state.sort = data && ['none', 'name', 'grade'].indexOf(data.sort) !== -1 ? data.sort : 'none';
     state.acta = data && data.acta ? data.acta : actaFromGroup(g, horas);
+    if (data && data.acta) applyMonthRule(state.acta, g.carrera || state.acta.carrera, catalogGroup && catalogGroup.meses);
     if (horas != null) state.acta.horas = str(horas);
     state.session = {
       id: id,

@@ -153,7 +153,7 @@
         continue;
       }
       var al = { cuenta: cuenta, nombre: nombre };
-      var notas = monthNotes(row, cols.mesCols);
+      var notas = monthNotes(row, cols.mesCols, acta.datos.carrera);
       if (notas) al.notas = notas;
       acta.alumnos.push(al);
     }
@@ -168,16 +168,17 @@
 
   /**
    * Calificaciones y faltas ya escritas en las columnas de meses (C y F) de un acta.
-   * Parcial 1 = C del primer mes; Parcial 2 = C del tercero (la misma convención de la app).
+   * Parcial 1 y 2 van en los meses que indica partialMonths según la licenciatura.
    */
-  function monthNotes(row, mesCols) {
+  function monthNotes(row, mesCols, carrera) {
     var notas = {};
     var any = false;
-    mesCols.forEach(function (mc, i) {
+    var pm = partialMonths(carrera, mesCols.map(function (mc) { return mc.mes; }));
+    mesCols.forEach(function (mc) {
       var c = cellValue(row[mc.col]);
       var f = cellValue(row[mc.col + 1]);
-      if (i === 0 && c) { notas.p1 = c; any = true; }
-      if (i === 2 && c) { notas.p2 = c; any = true; }
+      if (mc.mes === pm.p1 && c) { notas.p1 = c; any = true; }
+      if (mc.mes === pm.p2 && c) { notas.p2 = c; any = true; }
       if (f && mc.mes !== 11) { notas['m' + mc.mes] = f; any = true; }
     });
     return any ? notas : null;
@@ -262,6 +263,25 @@
     });
     var horas = /^\d{1,4}$/.test(info['TOTAL DE HORAS'] || '') ? info['TOTAL DE HORAS'] : '';
     return { datos: datos, alumnos: alumnos, duplicados: 0, meses: meses, horas: horas };
+  }
+
+  function isEnfermeria(carrera) {
+    return /ENFERMER/.test(fold(carrera));
+  }
+
+  /**
+   * Meses (0–11) en los que se registran Parcial 1 y Parcial 2 en el acta.
+   * - Enfermería: primer y tercer mes del acta (p. ej. Feb y Abr, o Ago y Oct).
+   * - Las demás licenciaturas (y CCH): Parcial 1 en septiembre y Parcial 2 en noviembre.
+   *   Si el acta no incluye esos meses (otro semestre), segundo y cuarto mes del acta.
+   * meses: meses de las columnas del acta, en orden.
+   */
+  function partialMonths(carrera, meses) {
+    meses = meses && meses.length ? meses : [1, 2, 3, 4, 5];
+    var at = function (i) { return meses[Math.min(i, meses.length - 1)]; };
+    if (isEnfermeria(carrera)) return { p1: at(0), p2: at(2) };
+    if (meses.indexOf(8) >= 0 && meses.indexOf(10) >= 0) return { p1: 8, p2: 10 };
+    return { p1: at(1), p2: at(3) };
   }
 
   function hash(s) {
@@ -492,6 +512,7 @@
     parseSheet: parseSheet,
     buildCatalog: buildCatalog,
     mergeCatalogs: mergeCatalogs,
+    partialMonths: partialMonths,
     importFiles: importFiles,
     teachers: teachers,
     summary: summary,

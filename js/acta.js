@@ -43,28 +43,31 @@
   };
 
   /** Columnas de meses: desde el mes del Parcial 1, al menos cinco, hasta incluir el del Parcial 2. */
-  function monthColumns(mesP1, mesP2) {
+  function monthColumns(mesP1, mesP2, mesInicio) {
     var p1 = Number(mesP1);
     var p2 = Number(mesP2);
     if (!(p1 >= 0 && p1 < 12)) p1 = 1;
     if (!(p2 >= 0 && p2 < 12)) p2 = (p1 + 2) % 12;
-    var off2 = (p2 - p1 + 12) % 12;
-    if (off2 === 0) off2 = 2;
-    var count = Math.max(5, off2 + 1);
+    // Las columnas empiezan en el primer mes del acta (si se conoce) o en el del Parcial 1.
+    var start = mesInicio !== '' && mesInicio != null && Number(mesInicio) >= 0 && Number(mesInicio) < 12 ? Number(mesInicio) : p1;
+    var off1 = (p1 - start + 12) % 12;
+    var off2 = (p2 - start + 12) % 12;
+    if (off2 === off1) off2 = off1 + 2;
+    var count = Math.max(5, off1 + 1, off2 + 1);
     var months = [];
     var indexes = [];
     for (var i = 0; i < count; i++) {
-      months.push(MESES[(p1 + i) % 12]);
-      indexes.push((p1 + i) % 12);
+      months.push(MESES[(start + i) % 12]);
+      indexes.push((start + i) % 12);
     }
-    return { months: months, indexes: indexes, p1: 0, p2: off2 };
+    return { months: months, indexes: indexes, p1: off1, p2: off2 };
   }
 
   var DICIEMBRE = 11;
 
   /** Meses en los que se registran faltas: los del acta, menos diciembre (no hay clases). */
-  function faltasMonths(mesP1, mesP2) {
-    return monthColumns(mesP1, mesP2).indexes.filter(function (m) { return m !== DICIEMBRE; });
+  function faltasMonths(mesP1, mesP2, mesInicio) {
+    return monthColumns(mesP1, mesP2, mesInicio).indexes.filter(function (m) { return m !== DICIEMBRE; });
   }
 
   function dash(v) {
@@ -81,7 +84,7 @@
    */
   function buildActa(info, rows, detailHeaders, detailFormats, extraSheets) {
     info = info || {};
-    var mc = monthColumns(info.mesP1, info.mesP2);
+    var mc = monthColumns(info.mesP1, info.mesP2, info.mesInicio);
     var n = mc.months.length;
     var M0 = 3; // primera columna de meses (D)
     var k = M0 + 2 * n; // columna "Prom."

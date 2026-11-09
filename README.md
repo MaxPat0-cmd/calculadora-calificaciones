@@ -65,7 +65,12 @@ Promedio parcial = (Parcial 1 + Parcial 2) / 2
 - **Acta**: formato de Acta Económica (encabezado de la institución, N°, N° de cuenta, nombre, C y F por mes, Prom., 1° y 2° vuelta, total y % de faltas, calificación final, firmas y leyendas), horizontal y ajustada a una página de ancho.
 - **Detalle**: todos los valores, incluidos promedio y resultado exactos y el estado.
 
-Los datos del encabezado se capturan una vez en **Datos del acta**. Los meses del Parcial 1 y 2 (Febrero y Abril por omisión) definen las columnas de meses.
+Los datos del encabezado se capturan una vez en **Datos del acta**. Las columnas de meses son las del acta original (p. ej. Ago–Dic). Cada parcial se registra en su mes:
+
+- **Todas las licenciaturas (y CCH), menos Enfermería**: Parcial 1 en **septiembre** y Parcial 2 en **noviembre** (si el acta es de otro semestre, en el segundo y cuarto mes).
+- **Enfermería**: Parcial 1 en el primer mes y Parcial 2 en el tercero (Ago y Oct, o Feb y Abr).
+
+En captura sin grupo los meses se eligen en Datos del acta (Febrero y Abril por omisión).
 
 ## Captura con teclado
 
