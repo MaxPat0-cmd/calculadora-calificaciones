@@ -876,6 +876,9 @@
     footer.hidden = grupo ? withData === 0 : n === 0;
     clearBtn.textContent = grupo ? 'Borrar calificaciones del grupo' : 'Borrar todos';
     exportBtn.disabled = grupo ? withData === 0 : n === 0;
+    $('export-top').disabled = exportBtn.disabled;
+    updateReminder();
+    if (isGridVisible() && !gridBody.contains(document.activeElement)) renderGrid();
     sortButtons.forEach(function (b) {
       b.setAttribute('aria-pressed', b.getAttribute('data-sort') === state.sort ? 'true' : 'false');
     });
@@ -1042,7 +1045,7 @@
 
   var dialog = $('confirm-dialog');
 
-  function confirmAction(title, message, confirmLabel, safe) {
+  function confirmAction(title, message, confirmLabel, safe, cancelLabel) {
     if (!dialog || typeof dialog.showModal !== 'function') {
       return Promise.resolve(window.confirm(message ? title + '\n\n' + message : title));
     }
@@ -1051,6 +1054,7 @@
     $('dialog-message').hidden = !message;
     var confirmBtn = $('dialog-confirm');
     confirmBtn.textContent = confirmLabel;
+    $('dialog-cancel').textContent = cancelLabel || 'Cancelar';
     confirmBtn.className = 'btn ' + (safe ? 'btn-primary' : 'btn-destructive');
     dialog.returnValue = '';
     var previous = document.activeElement;
@@ -1184,6 +1188,7 @@
       state.session.exportado = new Date().toISOString();
       persist(false);
     }
+    updateReminder();
   }
 
   function exportExcel() {
@@ -1248,7 +1253,9 @@
     identity.hidden = grupo;
     saveStayBtn.hidden = !grupo;
     $('load-excel-btn').hidden = !grupo;
+    $('capture-tools').hidden = !grupo;
     editBanner.hidden = true;
+    applyVista(grupo ? vista : 'alumno', false);
     state.editingId = null;
     $('acta').open = false;
     renderSessionHeader();
@@ -1411,6 +1418,7 @@
       if (pendiente >= 0) start = pendiente;
     }
     showStudent(start);
+    if (isGridVisible()) focusGridCell(start, null, false);
     if (cargadas) announceImported(cargadas, catalogGroup.calificacionesArchivo);
     return true;
   }
@@ -1967,8 +1975,13 @@
     if (action === 'edit') {
       if (state.mode === 'grupo') {
         var ev = compute(rec).ev;
-        goTo(indexOfRecord(id), ev.status === 'pendiente1' ? 'pv1' : ev.status === 'pendiente2' ? 'pv2'
-          : ev.status === 'parcial1' ? 'p2' : 'p1');
+        var key = ev.status === 'pendiente1' ? 'pv1' : ev.status === 'pendiente2' ? 'pv2'
+          : ev.status === 'parcial1' ? 'p2' : 'p1';
+        if (isGridVisible()) {
+          focusGridCell(indexOfRecord(id), key, true);
+          return;
+        }
+        goTo(indexOfRecord(id), key);
         scrollToCapture();
       } else {
         startEdit(id);
@@ -2007,7 +2020,9 @@
     });
   });
 
-  exportBtn.addEventListener('click', exportExcel);
+  exportBtn.addEventListener('click', reviewThenExport);
+  $('export-top').addEventListener('click', reviewThenExport);
+  $('export-reminder-btn').addEventListener('click', reviewThenExport);
 
   clearBtn.addEventListener('click', function () {
     var grupo = state.mode === 'grupo';
@@ -2023,7 +2038,8 @@
         });
         persist();
         render();
-        showStudent(0);
+        if (isGridVisible()) renderGrid();
+        else showStudent(0);
         return;
       }
       state.records = [];
@@ -2058,9 +2074,432 @@
     }
   });
 
+  // ---------- Revisión antes de exportar ----------
+
+  function namesText(list) {
+    var names = list.slice(0, 4).map(function (r) { return r.record.name; });
+    var extra = list.length - names.length;
+    return names.join(', ') + (extra > 0 ? ' y ' + plural(extra, 'más', 'más') : '');
+  }
+
+  /** En grupo: muestra qué falta antes de exportar; si todo está completo, exporta directo. */
+  function reviewThenExport() {
+    if (state.mode !== 'grupo') return exportExcel();
+    if (!isGridVisible() && !keepDraft()) return;
+    var rows = state.records.map(compute);
+    var n = rows.length;
+    var sin = rows.filter(function (r) { return !isGiven(r.g.p1) && !r.ev.excedeFaltas; });
+    var soloP1 = rows.filter(function (r) { return r.ev.status === 'parcial1'; });
+    var pend = rows.filter(function (r) { return r.graded && isPending(r.ev); });
+    if (!sin.length && !soloP1.length && !pend.length) return exportExcel();
+
+    var completos = n - sin.length - soloP1.length - pend.length;
+    var lines = [completos + ' de ' + n + ' alumnos con calificación final.'];
+    if (sin.length) lines.push('Sin calificar (' + sin.length + '): ' + namesText(sin) + '.');
+    if (soloP1.length) {
+      lines.push(soloP1.length === n - sin.length && !pend.length
+        ? 'Todos tienen solo el Parcial 1. Si vas a entregar el primer parcial, está bien así.'
+        : 'Solo con Parcial 1 (' + soloP1.length + '): ' + namesText(soloP1) + '.');
+    }
+    if (pend.length) lines.push('Con vuelta pendiente (' + pend.length + '): ' + namesText(pend) + '.');
+    var first = (sin[0] || pend[0] || soloP1[0]).record;
+    confirmAction('Revisa antes de exportar', lines.join('\n'), 'Exportar así', true, 'Completar')
+      .then(function (ok) {
+        if (ok) return exportExcel();
+        var idx = indexOfRecord(first.id);
+        var ev = compute(first).ev;
+        var key = !isGiven(compute(first).g.p1) ? 'p1' : ev.status === 'parcial1' ? 'p2'
+          : ev.status === 'pendiente1' ? 'pv1' : 'pv2';
+        if (isGridVisible()) focusGridCell(idx, key, true);
+        else { showStudent(idx, key); scrollToCapture(); }
+      });
+  }
+
+  // ---------- Recordatorio de exportar ----------
+
+  var reminderShown = '';
+  function updateReminder() {
+    var box = $('export-reminder');
+    var text = '';
+    var kind = '';
+    if (state.mode === 'grupo' && state.session && hasUnexported()) {
+      var rows = state.records.map(compute);
+      var n = rows.length;
+      var done = rows.filter(function (r) { return r.graded || r.ev.excedeFaltas; }).length;
+      var conP1 = rows.filter(function (r) { return isGiven(r.g.p1) || r.ev.excedeFaltas; }).length;
+      if (n && done === n) {
+        kind = 'done';
+        text = 'Ya calificaste a los ' + n + ' alumnos. Exporta tu Excel para entregarlo.';
+      } else if (n && conP1 === n) {
+        kind = 'done';
+        text = 'Todos tienen Parcial 1. Si vas a entregar el primer parcial, exporta tu Excel.';
+      } else {
+        text = 'Tienes calificaciones sin exportar. Cuando termines, exporta tu Excel para entregarlo.';
+      }
+    }
+    box.hidden = !text;
+    box.setAttribute('data-kind', kind);
+    $('export-reminder-text').textContent = text;
+    if (text && text !== reminderShown && Motion) Motion.materialize(box, { y: -6, blur: 4, scale: 0.98 });
+    reminderShown = text;
+  }
+
+  // ---------- Buscar alumno ----------
+
+  var searchCB = new Combobox($('search'), $('search-list'), {
+    options: function () {
+      if (state.mode !== 'grupo') return [];
+      return state.records.map(function (r, i) {
+        var c = compute(r);
+        return {
+          id: r.id,
+          label: r.name,
+          detail: (i + 1) + ' · ' + (r.cuenta ? 'Matrícula ' + r.cuenta + ' · ' : '') + STATUS[c.ev.status],
+          search: r.name + ' ' + (r.cuenta || ''),
+        };
+      });
+    },
+    empty: 'No hay alumnos con ese nombre o matrícula',
+    onSelect: function (o) {
+      if (!o) return;
+      var idx = indexOfRecord(o.id);
+      setTimeout(function () { searchCB.reset(); }, 0);
+      if (idx < 0) return;
+      if (isGridVisible()) {
+        focusGridCell(idx, null, true);
+      } else {
+        goTo(idx);
+        scrollToCapture();
+      }
+    },
+  });
+
+  // "/" lleva a la búsqueda (si no se está escribiendo en un campo).
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey) return;
+    var t = e.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+    if (captureView.hidden || $('capture-tools').hidden) return;
+    e.preventDefault();
+    $('search').focus();
+  });
+
+  // ---------- Vista de tabla ----------
+
+  var VISTA_KEY = 'vista.calificaciones.captura';
+  var vista = (function () {
+    try { return localStorage.getItem(VISTA_KEY) === 'tabla' ? 'tabla' : 'alumno'; } catch (e) { return 'alumno'; }
+  })();
+  var gridView = $('grid-view');
+  var gridBody = $('grid-body');
+  var captureCard = $('capture-card');
+  var GRID_KEYS = ['p1', 'p2', 'pv1', 'pv2'];
+  var GRID_LABELS = { p1: 'Parcial 1', p2: 'Parcial 2', pv1: 'Primera Vuelta', pv2: 'Segunda Vuelta' };
+
+  function isGridVisible() {
+    return !gridView.hidden;
+  }
+
+  function applyVista(v, focus) {
+    var tabla = v === 'tabla' && state.mode === 'grupo';
+    gridView.hidden = !tabla;
+    captureCard.hidden = tabla;
+    Array.prototype.forEach.call(document.querySelectorAll('[data-vista]'), function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-vista') === (tabla ? 'tabla' : 'alumno') ? 'true' : 'false');
+    });
+    if (tabla) {
+      renderGrid();
+      if (Motion) Motion.materialize(gridView, { y: 10, blur: 0, scale: 0.99 });
+      if (focus) focusGridCell(firstUngraded(state.session.pos) >= 0 ? firstUngraded(state.session.pos) : state.session.pos, null, false);
+    } else if (state.mode === 'grupo' && state.session) {
+      showStudent(state.session.pos, null, !focus);
+      if (Motion && focus) Motion.materialize(captureCard, { y: 10, blur: 0, scale: 0.99 });
+    }
+  }
+
+  Array.prototype.forEach.call(document.querySelectorAll('[data-vista]'), function (b) {
+    b.addEventListener('click', function () {
+      var v = b.getAttribute('data-vista');
+      if ((v === 'tabla') === isGridVisible()) return;
+      if (v === 'tabla' && !keepDraft()) return;
+      vista = v;
+      try { localStorage.setItem(VISTA_KEY, v); } catch (e) { /* sin almacenamiento */ }
+      applyVista(v, true);
+    });
+  });
+
+  function gridInput(rec, i, k) {
+    var input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'grid-input';
+    input.inputMode = 'decimal';
+    input.autocomplete = 'off';
+    input.spellcheck = false;
+    input.setAttribute('enterkeyhint', 'next');
+    input.setAttribute('data-key', k);
+    input.setAttribute('data-idx', String(i));
+    input.setAttribute('aria-label', GRID_LABELS[k] + ' de ' + rec.name);
+    input.value = rec[k] || '';
+    return input;
+  }
+
+  function renderGrid() {
+    var frag = document.createDocumentFragment();
+    state.records.forEach(function (rec, i) {
+      var row = document.createElement('div');
+      row.className = 'grid-row';
+      row.setAttribute('role', 'row');
+      row.setAttribute('data-idx', String(i));
+      var num = document.createElement('span');
+      num.className = 'g-num';
+      num.setAttribute('role', 'cell');
+      num.textContent = String(i + 1);
+      var name = document.createElement('span');
+      name.className = 'g-name';
+      name.setAttribute('role', 'cell');
+      var strong = document.createElement('span');
+      strong.className = 'g-student';
+      strong.textContent = rec.name;
+      var sub = document.createElement('span');
+      sub.className = 'g-cuenta';
+      sub.textContent = rec.cuenta || '';
+      name.appendChild(strong);
+      name.appendChild(sub);
+      row.appendChild(num);
+      row.appendChild(name);
+      GRID_KEYS.forEach(function (k) {
+        var cellEl = document.createElement('span');
+        cellEl.className = 'g-in g-' + k;
+        cellEl.setAttribute('role', 'cell');
+        cellEl.appendChild(gridInput(rec, i, k));
+        row.appendChild(cellEl);
+      });
+      var fin = document.createElement('span');
+      fin.className = 'g-final';
+      fin.setAttribute('role', 'cell');
+      var st = document.createElement('span');
+      st.className = 'g-status';
+      st.setAttribute('role', 'cell');
+      var badge = document.createElement('span');
+      badge.className = 'badge';
+      st.appendChild(badge);
+      row.appendChild(fin);
+      row.appendChild(st);
+      frag.appendChild(row);
+    });
+    gridBody.replaceChildren(frag);
+    state.records.forEach(function (rec, i) { updateGridRow(i); });
+  }
+
+  function updateGridRow(i) {
+    var row = gridBody.children[i];
+    var rec = state.records[i];
+    if (!row || !rec) return;
+    var ev = compute(rec).ev;
+    var applies = { p1: true, p2: true, pv1: !!(ev && ev.needsPv1), pv2: !!(ev && ev.needsPv2) };
+    GRID_KEYS.forEach(function (k) {
+      var input = row.querySelector('input[data-key="' + k + '"]');
+      input.disabled = !applies[k];
+      input.placeholder = applies[k] ? '' : '—';
+      if (input !== document.activeElement && input.getAttribute('aria-invalid') !== 'true') {
+        input.value = applies[k] ? rec[k] || '' : '';
+      }
+    });
+    var fin = row.querySelector('.g-final');
+    var text = finalText(ev);
+    var prev = fin.textContent;
+    fin.textContent = text != null ? text : '–';
+    if (text != null && prev !== fin.textContent && prev !== '' && Motion) Motion.pop(fin, { response: 0.35 });
+    var badge = row.querySelector('.badge');
+    badge.textContent = STATUS[ev.status] || '';
+    badge.setAttribute('data-status', ev.status);
+    row.setAttribute('data-status', ev.status);
+    row.classList.toggle('is-current', state.session && state.session.pos === i);
+  }
+
+  function gridCell(i, k) {
+    var row = gridBody.children[i];
+    return row ? row.querySelector('input[data-key="' + k + '"]') : null;
+  }
+
+  /** Enfoca la casilla de un alumno (la primera vacía si no se indica cuál). */
+  function focusGridCell(i, key, scroll) {
+    var rec = state.records[i];
+    if (!rec) return;
+    if (!key) {
+      var ev = compute(rec).ev;
+      key = !rec.p1 ? 'p1' : !rec.p2 ? 'p2' : ev && ev.needsPv1 && !rec.pv1 ? 'pv1' : ev && ev.needsPv2 && !rec.pv2 ? 'pv2' : 'p1';
+    }
+    var input = gridCell(i, key);
+    if (!input || input.disabled) input = gridCell(i, 'p1');
+    if (!input) return;
+    input.focus({ preventScroll: !scroll });
+    if (scroll) input.scrollIntoView({ block: 'center', behavior: Motion && Motion.reduced() ? 'auto' : 'smooth' });
+    input.select();
+  }
+
+  var gridRenderTimer = null;
+  function renderSoon() {
+    clearTimeout(gridRenderTimer);
+    gridRenderTimer = setTimeout(render, 140);
+  }
+
+  gridBody.addEventListener('input', function (e) {
+    var input = e.target;
+    if (!input.classList || !input.classList.contains('grid-input')) return;
+    var k = input.getAttribute('data-key');
+    var i = Number(input.getAttribute('data-idx'));
+    var rec = state.records[i];
+    if (!rec) return;
+    if (e.inputType && e.inputType.indexOf('insert') === 0 && /^n$/i.test(input.value.trim())) input.value = NP;
+    var p = parseInput(k, input.value);
+    if (p.status === 'invalid') {
+      input.setAttribute('aria-invalid', 'true');
+      input.title = p.error;
+      return;
+    }
+    input.removeAttribute('aria-invalid');
+    input.title = '';
+    rec[k] = p.status === 'empty' ? '' : p.text;
+    persist();
+    updateGridRow(i);
+    renderSoon();
+  });
+
+  // Al salir de la casilla: formato limpio y se descartan vueltas que ya no aplican.
+  gridBody.addEventListener('change', function (e) {
+    var input = e.target;
+    if (!input.classList || !input.classList.contains('grid-input')) return;
+    var i = Number(input.getAttribute('data-idx'));
+    var rec = state.records[i];
+    if (!rec || input.getAttribute('aria-invalid') === 'true') return;
+    var ev = compute(rec).ev;
+    if (!(ev && ev.needsPv1)) rec.pv1 = '';
+    if (!(ev && ev.needsPv2)) rec.pv2 = '';
+    persist();
+    updateGridRow(i);
+    var k = input.getAttribute('data-key');
+    if (!input.disabled) input.value = rec[k] || '';
+    renderSoon();
+  });
+
+  gridBody.addEventListener('focusin', function (e) {
+    var input = e.target;
+    if (!input.classList || !input.classList.contains('grid-input')) return;
+    var i = Number(input.getAttribute('data-idx'));
+    if (state.session && state.session.pos !== i) {
+      var old = state.session.pos;
+      state.session.pos = i;
+      persist(false);
+      updateGridRow(old);
+      updateGridRow(i);
+      markCurrentRow();
+    }
+  });
+
+  // Enter / ↓ bajan al siguiente alumno en la misma columna; Mayús+Enter / ↑ suben.
+  gridBody.addEventListener('keydown', function (e) {
+    var input = e.target;
+    if (!input.classList || !input.classList.contains('grid-input') || e.isComposing) return;
+    var down = (e.key === 'Enter' && !e.shiftKey) || e.key === 'ArrowDown';
+    var up = (e.key === 'Enter' && e.shiftKey) || e.key === 'ArrowUp';
+    if (!down && !up) return;
+    e.preventDefault();
+    var k = input.getAttribute('data-key');
+    var i = Number(input.getAttribute('data-idx'));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    for (var j = i + (down ? 1 : -1); j >= 0 && j < state.records.length; j += down ? 1 : -1) {
+      var next = gridCell(j, k);
+      if (next && !next.disabled) {
+        next.focus();
+        next.select();
+        next.scrollIntoView({ block: 'nearest' });
+        return;
+      }
+    }
+    if (down && e.key === 'Enter') showStatus('Llegaste al último alumno de la columna ' + GRID_LABELS[k] + '.');
+  });
+
+  // ---------- Tamaño de letra y tema ----------
+
+  var PREFS_KEY = 'vista.calificaciones';
+  var prefs = (function () {
+    try { return JSON.parse(localStorage.getItem(PREFS_KEY)) || {}; } catch (e) { return {}; }
+  })();
+
+  function applyPrefs() {
+    var root = document.documentElement;
+    var theme = prefs.theme === 'light' ? 'light' : 'dark';
+    var size = [1, 1.12, 1.25].indexOf(Number(prefs.size)) >= 0 ? Number(prefs.size) : 1;
+    root.setAttribute('data-theme', theme);
+    root.style.setProperty('--ui-scale', String(size));
+    var meta = $('theme-color');
+    if (meta) meta.setAttribute('content', theme === 'light' ? '#ebe8e1' : '#0c0d10');
+    Array.prototype.forEach.call(document.querySelectorAll('[data-size]'), function (b) {
+      b.setAttribute('aria-pressed', Number(b.getAttribute('data-size')) === size ? 'true' : 'false');
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-theme-set]'), function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-theme-set') === theme ? 'true' : 'false');
+    });
+  }
+
+  function savePrefs() {
+    try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch (e) { /* sin almacenamiento */ }
+    applyPrefs();
+  }
+
+  Array.prototype.forEach.call(document.querySelectorAll('[data-size]'), function (b) {
+    b.addEventListener('click', function () { prefs.size = Number(b.getAttribute('data-size')); savePrefs(); });
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('[data-theme-set]'), function (b) {
+    b.addEventListener('click', function () { prefs.theme = b.getAttribute('data-theme-set'); savePrefs(); });
+  });
+
+  var prefsBtn = $('prefs-btn');
+  var prefsPanel = $('prefs-panel');
+  function setPrefsOpen(open) {
+    if (open === !prefsPanel.hidden) return;
+    prefsPanel.hidden = !open;
+    prefsBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (open && Motion) Motion.materialize(prefsPanel, { y: 8, blur: 6, scale: 0.94 });
+  }
+  prefsBtn.addEventListener('click', function () { setPrefsOpen(prefsPanel.hidden); });
+  document.addEventListener('pointerdown', function (e) {
+    if (!prefsPanel.hidden && !$('prefs').contains(e.target)) setPrefsOpen(false);
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && !prefsPanel.hidden) {
+      setPrefsOpen(false);
+      prefsBtn.focus();
+    }
+  });
+
+  // ---------- Guía rápida ----------
+
+  var GUIDE_KEY = 'vista.calificaciones.guia';
+  var guide = $('guide-dialog');
+  function openGuide() {
+    setPrefsOpen(false);
+    if (typeof guide.showModal === 'function' && !guide.open) guide.showModal();
+  }
+  guide.addEventListener('close', function () {
+    try { localStorage.setItem(GUIDE_KEY, '1'); } catch (e) { /* sin almacenamiento */ }
+  });
+  guide.addEventListener('click', function (e) { if (e.target === guide) guide.close(); });
+  $('guide-link').addEventListener('click', openGuide);
+  $('prefs-guide').addEventListener('click', openGuide);
+
+  function maybeShowGuide() {
+    var seen;
+    try { seen = localStorage.getItem(GUIDE_KEY); } catch (e) { seen = '1'; }
+    if (!seen) openGuide();
+  }
+
+  applyPrefs();
+
   // Avisa antes de cerrar o recargar si hay calificaciones escritas sin guardar.
   window.addEventListener('beforeunload', function (e) {
-    if (captureView.hidden || !formDirty()) return;
+    if (captureView.hidden || !(formDirty() || (state.mode === 'grupo' && hasUnexported()))) return;
     e.preventDefault();
     e.returnValue = '';
   });
@@ -2077,5 +2516,6 @@
     var active = readJSON(ACTIVE_KEY);
     if (active && active !== 'libre' && active !== 'setup' && enterGroup(active, groupById(active), null)) return;
     showSetup();
+    maybeShowGuide();
   })();
 })();

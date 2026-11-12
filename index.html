@@ -5,10 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Calculadora de calificaciones</title>
   <meta name="description" content="Captura calificaciones, calcula el promedio final y exporta a Excel.">
-  <meta name="color-scheme" content="dark">
-  <meta name="theme-color" content="#0c0d10">
+  <meta name="color-scheme" content="dark light">
+  <meta name="theme-color" content="#0c0d10" id="theme-color">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2314161b'/%3E%3Ctext x='32' y='44' font-family='system-ui,sans-serif' font-size='34' font-weight='600' text-anchor='middle' fill='%23e3d0a8'%3E10%3C/text%3E%3C/svg%3E">
-  <link rel="stylesheet" href="styles.css?v=2026.11.12-0327">
+  <link rel="stylesheet" href="styles.css?v=2026.11.12-0658">
 </head>
 <body>
   <main class="app setup-view" id="setup-view" hidden>
@@ -65,6 +65,7 @@
       <div class="setup-links">
         <button type="button" class="btn-text" id="reimport-btn" hidden title="Agrega actas o un Excel exportado con Parcial 1; no borra lo ya importado">Importar archivos</button>
         <button type="button" class="btn-text" id="free-btn">Capturar sin grupo</button>
+        <button type="button" class="btn-text" id="guide-link">¿Cómo funciona?</button>
         <button type="button" class="btn-text btn-danger" id="reset-btn" title="Borra las actas importadas y todas las calificaciones guardadas en este navegador">Empezar de cero</button>
       </div>
     </footer>
@@ -82,8 +83,34 @@
           <span class="progress-text" id="progress-text"></span>
         </div>
       </div>
-      <button type="button" class="btn btn-plain btn-small" id="change-group">Cambiar grupo</button>
+      <div class="session-actions">
+        <button type="button" class="btn btn-primary btn-small" id="export-top" disabled>
+          <svg aria-hidden="true" viewBox="0 0 20 20" width="16" height="16"><path d="M10 3v9m0 0-3.5-3.5M10 12l3.5-3.5M4 14.5V16a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-1.5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Exportar Excel
+        </button>
+        <button type="button" class="btn btn-plain btn-small" id="change-group">Cambiar grupo</button>
+      </div>
     </header>
+
+    <div class="export-reminder" id="export-reminder" role="status" aria-live="polite" hidden>
+      <svg class="er-icon" aria-hidden="true" viewBox="0 0 20 20" width="20" height="20"><circle cx="10" cy="10" r="7.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M10 6v4.5M10 13.6v.1" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      <p class="er-text" id="export-reminder-text"></p>
+      <button type="button" class="btn btn-primary btn-small" id="export-reminder-btn">Exportar Excel</button>
+    </div>
+
+    <div class="capture-tools" id="capture-tools" hidden>
+      <div class="segmented view-switch" role="group" aria-label="Forma de captura">
+        <button type="button" data-vista="alumno" aria-pressed="true">Un alumno a la vez</button>
+        <button type="button" data-vista="tabla" aria-pressed="false">Tabla</button>
+      </div>
+      <div class="cb-field search-field">
+        <svg class="search-icon" aria-hidden="true" viewBox="0 0 20 20" width="16" height="16"><circle cx="8.5" cy="8.5" r="5.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="m12.7 12.7 4 4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+        <label for="search" class="visually-hidden">Buscar alumno por nombre o matrícula</label>
+        <input id="search" type="text" placeholder="Buscar alumno o matrícula" spellcheck="false" autocomplete="off" enterkeyhint="go">
+        <kbd class="search-kbd" aria-hidden="true">/</kbd>
+        <ul class="cb-list" id="search-list"></ul>
+      </div>
+    </div>
 
     <header class="page-header" id="free-header">
       <h1>Calculadora de calificaciones</h1>
@@ -91,7 +118,7 @@
       <button type="button" class="btn-text" id="choose-group">Elegir grupo</button>
     </header>
 
-    <section class="card capture" aria-label="Captura de calificaciones">
+    <section class="card capture" id="capture-card" aria-label="Captura de calificaciones">
       <form id="capture-form" novalidate autocomplete="off">
         <div class="edit-banner" id="edit-banner" hidden>
           <span>Editando <strong id="edit-name"></strong></span>
@@ -204,6 +231,25 @@
       </form>
     </section>
 
+    <section class="card grid-card" id="grid-view" aria-label="Captura en tabla" hidden>
+      <p class="grid-help">Escribe y presiona <kbd>Enter</kbd> para bajar al siguiente alumno. Se guarda solo. Escribe <strong>n</strong> para NP. Las faltas se capturan en <em>Un alumno a la vez</em>.</p>
+      <div class="grid-scroll">
+        <div class="grid" role="table" aria-label="Calificaciones del grupo">
+          <div class="grid-row grid-head" role="row">
+            <span role="columnheader" class="g-num">#</span>
+            <span role="columnheader" class="g-name">Alumno</span>
+            <span role="columnheader" class="g-in g-p1">Parcial 1</span>
+            <span role="columnheader" class="g-in g-p2">Parcial 2</span>
+            <span role="columnheader" class="g-in g-pv1">Primera Vuelta</span>
+            <span role="columnheader" class="g-in g-pv2">Segunda Vuelta</span>
+            <span role="columnheader" class="g-final">Final</span>
+            <span role="columnheader" class="g-status">Estado</span>
+          </div>
+          <div id="grid-body" role="rowgroup"></div>
+        </div>
+      </div>
+    </section>
+
     <details class="card acta" id="acta">
       <summary>
         <span class="acta-title">Datos del acta</span>
@@ -299,15 +345,59 @@
     </form>
   </dialog>
 
-  <p class="app-version" id="app-version">Versión 2026.11.12-0327</p>
+  <dialog class="dialog guide" id="guide-dialog" aria-labelledby="guide-title">
+    <form method="dialog">
+      <h2 id="guide-title">Así funciona</h2>
+      <ol class="guide-steps">
+        <li>
+          <span class="step-n" aria-hidden="true">1</span>
+          <div><strong>Elige tu grupo</strong><p>Importa tu acta (.xlsx), elige maestro y grupo, y escribe el total de horas.</p></div>
+        </li>
+        <li>
+          <span class="step-n" aria-hidden="true">2</span>
+          <div><strong>Captura</strong><p>Un alumno a la vez o en tabla. <kbd>Enter</kbd> avanza y escribir <strong>n</strong> pone NP. Para saltar a un alumno, búscalo por nombre o matrícula.</p></div>
+        </li>
+        <li>
+          <span class="step-n" aria-hidden="true">3</span>
+          <div><strong>Exporta tu Excel</strong><p>Con el botón <em>Exportar Excel</em> de arriba. Antes te mostramos si a alguien le falta algo, y te recordamos cuando haya calificaciones sin exportar.</p></div>
+        </li>
+      </ol>
+      <p class="guide-note">Todo se guarda en este navegador. Con el botón <strong>Aa</strong> (arriba a la derecha) cambias el tamaño de letra o el tema.</p>
+      <div class="dialog-actions dialog-actions-single">
+        <button value="ok" class="btn btn-primary" id="guide-ok">Empezar</button>
+      </div>
+    </form>
+  </dialog>
 
-  <script src="js/motion.js?v=2026.11.12-0327"></script>
-  <script src="js/grades.js?v=2026.11.12-0327"></script>
-  <script src="js/importar.js?v=2026.11.12-0327"></script>
-  <script src="js/catalogo.js?v=2026.11.12-0327"></script>
-  <script src="js/combobox.js?v=2026.11.12-0327"></script>
-  <script src="js/xlsx.js?v=2026.11.12-0327"></script>
-  <script src="js/acta.js?v=2026.11.12-0327"></script>
-  <script src="js/app.js?v=2026.11.12-0327"></script>
+  <div class="prefs" id="prefs">
+    <div class="prefs-panel" id="prefs-panel" role="group" aria-label="Tamaño de letra y tema" hidden>
+      <p class="prefs-label">Tamaño de letra</p>
+      <div class="segmented prefs-seg" role="group" aria-label="Tamaño de letra">
+        <button type="button" data-size="1" aria-pressed="true">Normal</button>
+        <button type="button" data-size="1.12" aria-pressed="false">Grande</button>
+        <button type="button" data-size="1.25" aria-pressed="false">Más grande</button>
+      </div>
+      <p class="prefs-label">Tema</p>
+      <div class="segmented prefs-seg" role="group" aria-label="Tema">
+        <button type="button" data-theme-set="dark" aria-pressed="true">Oscuro</button>
+        <button type="button" data-theme-set="light" aria-pressed="false">Claro</button>
+      </div>
+      <button type="button" class="btn-text prefs-guide" id="prefs-guide">¿Cómo funciona?</button>
+    </div>
+    <button type="button" class="prefs-btn" id="prefs-btn" aria-expanded="false" aria-controls="prefs-panel" title="Tamaño de letra y tema">
+      <span aria-hidden="true">Aa</span><span class="visually-hidden">Tamaño de letra y tema</span>
+    </button>
+  </div>
+
+  <p class="app-version" id="app-version">Versión 2026.11.12-0658</p>
+
+  <script src="js/motion.js?v=2026.11.12-0658"></script>
+  <script src="js/grades.js?v=2026.11.12-0658"></script>
+  <script src="js/importar.js?v=2026.11.12-0658"></script>
+  <script src="js/catalogo.js?v=2026.11.12-0658"></script>
+  <script src="js/combobox.js?v=2026.11.12-0658"></script>
+  <script src="js/xlsx.js?v=2026.11.12-0658"></script>
+  <script src="js/acta.js?v=2026.11.12-0658"></script>
+  <script src="js/app.js?v=2026.11.12-0658"></script>
 </body>
 </html>
