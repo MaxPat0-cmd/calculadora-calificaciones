@@ -7,6 +7,7 @@
   var Catalogo = window.Catalogo;
   var Importar = window.Importar;
   var Combobox = window.Combobox;
+  var Motion = window.Motion || null;
 
   // Captura libre (sin grupo): las mismas llaves de siempre, para no perder datos anteriores.
   var FREE_KEY = 'calificaciones.v1';
@@ -460,9 +461,14 @@
     });
   }
 
+  var quietResult = false; // al cambiar de alumno se anima el formulario completo, no el número
+
   function updateResult() {
     var f = readForm();
     var ev = f.ev;
+    var prevFinal = out.final.textContent;
+    var prevStatus = out.status.hidden ? '' : out.status.getAttribute('data-status');
+    var prevNotice = notice.hidden ? '' : notice.textContent;
 
     // Los campos de vueltas solo se habilitan cuando hacen falta.
     // Las vueltas se abren hasta tener los dos parciales (con solo el Parcial 1 no aplican todavía).
@@ -510,6 +516,12 @@
     setBadge(out.status, ev && finalText(ev) != null ? ev.status : null);
     resultBox.setAttribute('data-ready', ev && finalText(ev) != null ? 'true' : 'false');
     resultBox.setAttribute('data-status', ev ? ev.status : '');
+
+    if (quietResult || !Motion) return;
+    if (out.final.textContent !== prevFinal && out.final.textContent !== '–') Motion.pop(out.final);
+    var status = out.status.hidden ? '' : out.status.getAttribute('data-status');
+    if (status && status !== prevStatus) Motion.materialize(out.status, { y: 4, blur: 4, scale: 0.9 });
+    if (message && message !== prevNotice) Motion.materialize(notice, { y: -4, blur: 4, scale: 0.98 });
   }
 
   function clearForm() {
@@ -631,6 +643,7 @@
     statusEl.textContent = message;
     statusEl.classList.toggle('is-error', !!isError);
     statusEl.classList.add('is-visible');
+    if (Motion) Motion.materialize(statusEl, { y: 4, blur: 3, scale: 0.96 });
     statusTimer = setTimeout(function () {
       statusEl.classList.remove('is-visible', 'is-error');
       statusEl.innerHTML = statusHint;
@@ -647,6 +660,7 @@
     var n = state.records.length;
     if (!n) return;
     index = Math.max(0, Math.min(n - 1, index));
+    var dir = index > state.session.pos ? 1 : index < state.session.pos ? -1 : 0;
     state.session.pos = index;
     var rec = state.records[index];
     $('student-pos').textContent = 'Alumno ' + (index + 1) + ' de ' + n;
@@ -655,7 +669,14 @@
     $('prev-btn').disabled = index === 0;
     $('next-btn').disabled = index === n - 1;
     saveBtn.textContent = 'Guardar y siguiente';
+    quietResult = !!dir;
     fillForm(rec);
+    quietResult = false;
+    if (dir && Motion) {
+      Motion.slide(studentHead.querySelector('.student-info'), dir);
+      Motion.slide(form.querySelector('.grades'), dir, { delay: 25 });
+      Motion.slide(resultBox, dir, { delay: 50 });
+    }
     markCurrentRow();
     persist(false);
     if (keepFocus) return;
@@ -669,7 +690,7 @@
 
   /** ¿Lo escrito en el formulario difiere de lo guardado para el alumno actual? */
   function formDirty() {
-    var rec = state.mode === 'grupo' ? currentStudent() : null;
+    var rec = state.mode === 'grupo' ? currentStudent() : state.editingId ? findRecord(state.editingId) : null;
     if (state.mode === 'grupo' && !rec) return false;
     var canon = function (k, v) {
       var p = parseInput(k, v);
@@ -724,6 +745,7 @@
     flashRow(rec.id);
 
     if (stay) {
+      confirmButton(saveStayBtn, 'Guardado');
       announceSaved(rec);
       var focused = document.activeElement;
       showStudent(state.session.pos, null, true);
@@ -741,6 +763,18 @@
     }
     announceSaved(rec, pos + 1 >= n ? ' · Faltan alumnos por calificar' : '');
     showStudent(next);
+  }
+
+  /** Confirmación breve dentro del botón (completion feedback). */
+  function confirmButton(btn, text) {
+    clearTimeout(btn.doneTimer);
+    if (btn.idleLabel == null) btn.idleLabel = btn.textContent;
+    btn.textContent = '✓ ' + text;
+    btn.classList.add('is-done');
+    btn.doneTimer = setTimeout(function () {
+      btn.textContent = btn.idleLabel;
+      btn.classList.remove('is-done');
+    }, 1400);
   }
 
   function markCurrentRow() {
@@ -830,6 +864,7 @@
 
     countText.textContent = grupo ? 'Calificados:' : 'Alumnos capturados:';
     countEl.textContent = grupo ? graded + ' de ' + n : String(n);
+    if (grupo) updateProgress(graded, n);
     var extra = [];
     if (soloP1) extra.push(soloP1 + ' solo con Parcial 1');
     if (pending) extra.push(pending + ' con vuelta pendiente');
@@ -904,6 +939,18 @@
     var avgGroup = Grades.groupAverage(rows.filter(function (row) { return row.ev.sumUnits != null; })
       .map(function (row) { return row.ev.sumUnits; }));
     groupAvgEl.textContent = avgGroup == null ? '–' : avgGroup;
+  }
+
+  function updateProgress(done, total) {
+    var bar = $('progress');
+    var ratio = total ? done / total : 0;
+    $('progress-fill').style.transform = 'scaleX(' + ratio + ')';
+    var text = done + ' de ' + total + ' calificados';
+    $('progress-text').textContent = text;
+    bar.setAttribute('aria-valuemax', String(total));
+    bar.setAttribute('aria-valuenow', String(done));
+    bar.setAttribute('aria-valuetext', text);
+    bar.classList.toggle('is-complete', total > 0 && done === total);
   }
 
   function flashRow(id) {
@@ -1190,6 +1237,7 @@
     captureView.hidden = view !== 'capture';
     document.title = view === 'setup' ? 'Configurar grupo' : 'Calculadora de calificaciones';
     window.scrollTo(0, 0);
+    if (Motion) Motion.materialize(view === 'setup' ? setupView : captureView, { y: 12, blur: 0, scale: 0.985 });
   }
 
   function applyModeChrome() {
@@ -1783,7 +1831,11 @@
   // ---------- Eventos ----------
 
   function bindInput(k) {
-    inputs[k].addEventListener('input', function () {
+    inputs[k].addEventListener('input', function (e) {
+      // Atajo: escribir "n" pone NP (No presentó). Al borrar no se vuelve a activar.
+      if (e.inputType && e.inputType.indexOf('insert') === 0 && /^n$/i.test(inputs[k].value.trim())) {
+        inputs[k].value = NP;
+      }
       validateLive(k);
       updateResult();
     });
@@ -2004,6 +2056,13 @@
       setCatalog(readJSON(CATALOG_KEY));
       showSetup();
     }
+  });
+
+  // Avisa antes de cerrar o recargar si hay calificaciones escritas sin guardar.
+  window.addEventListener('beforeunload', function (e) {
+    if (captureView.hidden || !formDirty()) return;
+    e.preventDefault();
+    e.returnValue = '';
   });
 
   // ---------- Inicio ----------
