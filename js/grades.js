@@ -78,11 +78,27 @@
    * lo muestran con un decimal, cortando el resto (como en el acta).
    */
   function partialAverage(u1, u2) {
-    // (u1 + u2) / 2 / SCALE  =  (u1 + u2) * 5 / 10^(DECIMALS + 1)
-    var text = formatScaled((u1 + u2) * 5, DECIMALS + 1);
-    // décimas truncadas = floor((u1 + u2) / 2 / (SCALE / 10))
-    var shortText = formatScaled(Math.floor((u1 + u2) / (SCALE / 5)), 1);
-    return { text: text, value: Number(text), shortText: shortText, shortValue: Number(shortText) };
+    // Solo cuenta el primer decimal: décimas truncadas = floor((u1 + u2) / 2 / (SCALE / 10)).
+    // 7.75 → 7.7 (no se redondea).
+    var tenths = Math.floor((u1 + u2) / (SCALE / 5));
+    var text = formatScaled(tenths, 1);
+    return { text: text, value: Number(text), shortText: text, shortValue: Number(text), tenths: tenths };
+  }
+
+  /**
+   * Deja una calificación ya leída con un solo decimal, cortando el resto (7.75 → 7.7).
+   * Para valores guardados o importados de Excel que traigan más decimales.
+   */
+  function oneDecimal(p) {
+    if (!p || p.status !== 'valid') return p;
+    var units = Math.floor(p.units / (SCALE / 10)) * (SCALE / 10);
+    var text = formatScaled(units, DECIMALS);
+    return { status: 'valid', units: units, text: text, value: Number(text) };
+  }
+
+  /** Décimas truncadas de un valor en unidades (solo se usa el primer decimal). */
+  function truncTenths(units) {
+    return Math.floor(units / (SCALE / 10));
   }
 
   var NP = 'NP'; // "No presentó", válido solo en las vueltas
@@ -115,21 +131,24 @@
     return { fraction: tenths / 1000, text: formatScaled(tenths, 1) };
   }
 
-  /** Calcula todo a partir de las unidades de las tres calificaciones. */
+  /**
+   * Resultado de una vuelta = (promedio parcial + vuelta) / 2, usando solo el primer decimal
+   * (el promedio parcial ya viene truncado y el resultado también se trunca: 6.25 → 6.2).
+   * La calificación final redondea ese valor (.5 hacia arriba).
+   */
   function calculate(u1, u2, u3) {
     var partial = partialAverage(u1, u2);
-    // resultadoExacto = (u1 + u2 + 2·u3) / (4·SCALE)
-    var sum = u1 + u2 + 2 * u3;
-    var exactText = formatScaled(sum * 25, DECIMALS + 2); // sum / (4·10^4) = sum·25 / 10^6
-    // Redondeo .5 hacia arriba: floor(x + 0.5) = floor((sum + 2·SCALE) / (4·SCALE)), en enteros.
-    var final = Math.floor((sum + 2 * SCALE) / (4 * SCALE));
+    // (promedio truncado + vuelta) / 2, en unidades: (tenths·SCALE/10 + u3) / 2
+    var tenths = truncTenths((partial.tenths * (SCALE / 10) + u3) / 2);
+    var exactText = formatScaled(tenths, 1);
+    var final = Math.floor((tenths + 5) / 10);
     return {
       partial: partial.value,
       partialText: partial.text,
       exact: Number(exactText),
       exactText: exactText,
       final: final,
-      sumUnits: sum,
+      sumUnits: tenths * 4 * (SCALE / 10),
     };
   }
 
@@ -226,8 +245,8 @@
       base.status = 'exento';
       base.exact = partial.value;
       base.exactText = partial.text;
-      base.sumUnits = 2 * (u1 + u2);
-      base.final = Math.floor((u1 + u2 + SCALE) / (2 * SCALE));
+      base.sumUnits = partial.tenths * 4 * (SCALE / 10);
+      base.final = Math.floor((partial.tenths + 5) / 10);
       return base;
     }
 
@@ -287,19 +306,18 @@
   }
 
   /**
-   * Promedio del grupo usando los resultados exactos (antes del redondeo individual;
-   * para reprobados y NP, el 5 registrado),
-   * redondeado a máximo dos decimales. Devuelve texto o null si no hay registros.
+   * Promedio del grupo usando los resultados de cada alumno con un decimal (antes del redondeo
+   * individual; para reprobados y NP, el 5 registrado). Solo se usa el primer decimal (truncado).
+   * Devuelve texto o null si no hay registros.
    */
   function groupAverage(sumUnitsList) {
     var n = sumUnitsList.length;
     if (!n) return null;
     var total = 0;
     for (var i = 0; i < n; i++) total += sumUnitsList[i];
-    // promedio·100 = total / (n · 4·SCALE / 100) = total / (n·400); redondeo .5 hacia arriba.
-    var denom = n * 4 * SCALE / 100;
-    var hundredths = Math.floor((2 * total + denom) / (2 * denom));
-    return formatScaled(hundredths, 2);
+    // promedio·10 = total / (n · 4·SCALE / 10), truncado.
+    var tenths = Math.floor(total / (n * 4 * SCALE / 10));
+    return formatScaled(tenths, 1);
   }
 
   var api = {
@@ -320,6 +338,7 @@
     exceedsAbsences: exceedsAbsences,
     STATUS_LABELS: STATUS_LABELS,
     groupAverage: groupAverage,
+    oneDecimal: oneDecimal,
     formatScaled: formatScaled,
   };
 

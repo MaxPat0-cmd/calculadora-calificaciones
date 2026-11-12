@@ -65,8 +65,9 @@
 
   // Lectura de lo ya guardado: acepta la precisión de versiones anteriores.
   var stored = {
-    grade: function (v) { return Grades.parseGrade(v, Grades.DECIMALS); },
-    vuelta: function (v) { return Grades.parseVuelta(v, Grades.DECIMALS); },
+    // Lo guardado o importado con más decimales se corta al primero (7.75 → 7.7).
+    grade: function (v) { return Grades.oneDecimal(Grades.parseGrade(v, Grades.DECIMALS)); },
+    vuelta: function (v) { return Grades.oneDecimal(Grades.parseVuelta(v, Grades.DECIMALS)); },
     faltas: function (v) { return Grades.parseFaltas(v); },
   };
 
@@ -477,8 +478,8 @@
     updateNpButtons();
 
     out.partial.textContent = ev ? ev.partialShortText : '–';
-    out.partial.title = ev ? 'Exacto: ' + ev.partialText : '';
-    out.exactLabel.textContent = 'Resultado exacto';
+    out.partial.title = '';
+    out.exactLabel.textContent = 'Resultado';
     out.exact.textContent = '–';
     out.final.textContent = '–';
 
@@ -897,11 +898,10 @@
       tr.appendChild(cell('td', 'c-n c-p1', row.g.p1.text || '–', 'P1'));
       tr.appendChild(cell('td', 'c-n c-p2', row.g.p2.text || '–', 'P2'));
       var avg = cell('td', 'c-n c-avg', ev.partialShortText, 'Prom.');
-      if (row.graded) avg.title = 'Exacto: ' + ev.partialText;
       tr.appendChild(avg);
       tr.appendChild(cell('td', 'c-n c-pv1' + (ev.needsPv1 ? '' : ' is-na'), vueltaText(ev.needsPv1, r.pv1), '1ª V.'));
       tr.appendChild(cell('td', 'c-n c-pv2' + (ev.needsPv2 ? '' : ' is-na'), vueltaText(ev.needsPv2, r.pv2), '2ª V.'));
-      tr.appendChild(cell('td', 'c-n c-exact', ev.exactText != null ? ev.exactText : '–', 'Exacto'));
+      tr.appendChild(cell('td', 'c-n c-exact', ev.exactText != null ? ev.exactText : '–', 'Result.'));
       tr.appendChild(cell('td', 'c-n c-final', finalText(ev) || '–', 'Final'));
       var faltasCell = withSub(cell('td', 'c-n c-faltas', String(row.faltas), 'Faltas'), row.pct ? row.pct.text + '%' : '');
       var detalleMes = Object.keys(row.faltasMes).map(function (m) { return Acta.MESES[m] + ' ' + row.faltasMes[m]; });
@@ -1086,7 +1086,7 @@
   function detailHeaders(meses) {
     return ['Número', 'Matrícula', 'Nombre completo', 'Parcial 1', 'Parcial 2']
       .concat(meses.map(function (m) { return 'Faltas ' + Acta.MESES_LARGOS[m]; }), [
-        'Promedio parcial (exacto)', 'Prom. (acta)', 'Primera Vuelta', 'Segunda Vuelta', 'Resultado exacto',
+        'Promedio parcial', 'Prom. (acta)', 'Primera Vuelta', 'Segunda Vuelta', 'Resultado',
         'Calificación final', 'Total de faltas', '% de faltas', 'Estado']);
   }
 
