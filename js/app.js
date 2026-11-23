@@ -885,7 +885,10 @@
 
     var cur = grupo ? currentStudent() : null;
     var frag = document.createDocumentFragment();
-    rows.forEach(function (row, i) {
+    // El número de lista es el del acta, aunque la tabla esté ordenada por nombre o calificación.
+    var listNo = {};
+    state.records.forEach(function (rec, j) { listNo[rec.id] = j + 1; });
+    rows.forEach(function (row) {
       var r = row.record;
       var ev = row.ev;
       var tr = document.createElement('tr');
@@ -893,10 +896,10 @@
       tr.setAttribute('data-status', ev.status);
       if (r.id === (grupo ? cur && cur.id : state.editingId)) tr.className = 'is-editing';
 
-      tr.appendChild(cell('td', 'c-num', String(i + 1)));
+      tr.appendChild(cell('td', 'c-num', String(listNo[r.id])));
       tr.appendChild(cell('td', 'c-cuenta', r.cuenta || '–'));
       var nameCell = withSub(cell('td', 'c-name', r.name), r.cuenta);
-      nameCell.setAttribute('data-num', String(i + 1));
+      nameCell.setAttribute('data-num', String(listNo[r.id]));
       tr.appendChild(nameCell);
       tr.appendChild(cell('td', 'c-n c-p1', row.g.p1.text || '–', 'P1'));
       tr.appendChild(cell('td', 'c-n c-p2', row.g.p2.text || '–', 'P2'));
@@ -1141,7 +1144,8 @@
   }
 
   function buildExcel() {
-    var computed = orderedRows();
+    // Siempre en el orden oficial del acta (o de captura), sin importar cómo se ordene la tabla en pantalla.
+    var computed = state.records.map(compute);
     var meses = currentMonths();
     var rows = computed.map(function (row, i) {
       var ev = row.ev;
